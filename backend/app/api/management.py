@@ -15,7 +15,7 @@ from app.models import (
     PublicBin, AuditLog, Report, UserRole, PickupStatus, BatchStatus
 )
 from app.schemas import (
-    UserResponse, UserUpdate, CollectorResponse, CollectorUpdate,
+    UserCreate, UserResponse, UserUpdate, CollectorResponse, CollectorUpdate,
     RecyclerResponse, RecyclerUpdate, PublicBinCreate, PublicBinResponse,
     PublicBinUpdate, AuditLogResponse, ReportResponse, PaginatedResponse
 )
@@ -120,11 +120,31 @@ async def list_users(
 
 @router.post("/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 async def create_user(
-    user_data: UserResponse,
+    user_data: UserCreate,
     current_user: User = Depends(require_management),
     db: AsyncSession = Depends(get_db)
 ):
-    pass
+    # Ensure username and email are unique
+    existing = await db.execute(select(User).where((User.username == user_data.username) | (User.email == user_data.email)))
+    if existing.scalar_one_or_none():
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username or email already exists"
+        )
+    # Hash password
+    hashed = get_password_hash(user_data.password)
+    user = User(
+        username=user_data.username,
+        email=user_data.email,
+        phone=user_data.phone,
+        role=user_data.role,
+        password_hash=hashed,
+        is_active=True,
+    )
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    return user
 
 
 @router.put("/users/{user_id}", response_model=UserResponse)
