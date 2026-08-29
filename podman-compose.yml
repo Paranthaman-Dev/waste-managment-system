@@ -43,22 +43,6 @@ services:
     command: >
       sh -c "alembic -c alembic.ini upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
-  frontend:
-    build:
-      context: ./frontend
-      dockerfile: Containerfile
-    container_name: waste-frontend
-    environment:
-      VITE_API_URL: http://localhost:8000
-    ports:
-      - "5173:5173"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    depends_on:
-      - backend
-    command: npm run dev -- --host 0.0.0.0 --port 5173
-
 volumes:
   postgres_data:
   upload_data:

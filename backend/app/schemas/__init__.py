@@ -2,12 +2,13 @@
 Covers auth, user, collector, recycler, management, bins, pickups, batches.
 """
 
-from datetime import datetime, date
+from datetime import datetime, date, timezone
 from typing import Optional, List, Any, Generic, TypeVar
 
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 from app.models import UserRole, PickupStatus, BatchStatus
+from app.core.config import reward_rate_for
 
 # -------------------------------------------------------------------
 # Shared
@@ -101,12 +102,17 @@ class RecyclerUpdate(BaseModel):
 # PickupRequest
 # -------------------------------------------------------------------
 class PickupRequestCreate(BaseModel):
-    waste_type: str
-    quantity_kg: float
-    location: str
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    waste_type: str = Field(min_length=1, max_length=50)
+    quantity_kg: float = Field(gt=0)
+    location: str = Field(min_length=1)
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     preferred_time: Optional[datetime] = None
+
+    @field_validator("waste_type")
+    @classmethod
+    def validate_waste_type(cls, v: str) -> str:
+        return v.strip().lower()
 
 class PickupRequestResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -122,13 +128,19 @@ class PickupRequestResponse(BaseModel):
     status: PickupStatus
     requested_at: datetime
     collected_at: Optional[datetime] = None
+    points_earned: Optional[int] = None
+
+class PickupCollectResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    pickup: PickupRequestResponse
+    points_earned: int
 
 class PickupRequestUpdate(BaseModel):
-    waste_type: Optional[str] = None
-    quantity_kg: Optional[float] = None
+    waste_type: Optional[str] = Field(default=None, min_length=1, max_length=50)
+    quantity_kg: Optional[float] = Field(default=None, gt=0)
     location: Optional[str] = None
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
+    latitude: Optional[float] = Field(default=None, ge=-90, le=90)
+    longitude: Optional[float] = Field(default=None, ge=-180, le=180)
     preferred_time: Optional[datetime] = None
     status: Optional[PickupStatus] = None
 
@@ -207,3 +219,78 @@ class PaginatedResponse(BaseModel):
     page: int
     page_size: int
     total_pages: int
+
+# -------------------------------------------------------------------
+# Rewards & Vouchers
+# -------------------------------------------------------------------
+class RewardBalanceResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    user_id: int
+    balance: int
+    lifetime_earned: int
+
+class RewardRatesResponse(BaseModel):
+    rates: dict
+    default: int
+
+class RewardLedgerResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: int
+    pickup_id: Optional[int] = None
+    batch_id: Optional[int] = None
+    waste_type: str
+    weight_kg: float
+    points: int
+    created_at: datetime
+
+class VoucherCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=120)
+    description: str = ""
+
+    cost_points: int = Field(gt=0)
+    active: bool = True
+    valid_until: Optional[datetime] = None
+
+    @field_validator("valid_until")
+    @classmethod
+    def validate_valid_until(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is not None and v < datetime.now(timezone.utc).replace(tzinfo=None):
+            raise ValueError("valid_until must be in the future")
+        return v
+
+class VoucherUpdate(BaseModel):
+    title: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    description: Optional[str] = None
+    cost_points: Optional[int] = Field(default=None, gt=0)
+    active: Optional[bool] = None
+    valid_until: Optional[datetime] = None
+
+    @field_validator("valid_until")
+    @classmethod
+    def validate_valid_until(cls, v: Optional[datetime]) -> Optional[datetime]:
+        if v is not None and v < datetime.now(timezone.utc).replace(tzinfo=None):
+            raise ValueError("valid_until must be in the future")
+        return v
+
+class VoucherResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    title: str
+    description: str
+    cost_points: int
+    active: bool
+    created_by: int
+    valid_until: Optional[datetime] = None
+    created_at: datetime
+
+class RedemptionResponse(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+    id: int
+    user_id: int
+    voucher_id: int
+    points_spent: int
+    status: str
+    redeemed_at: datetime
+    voucher_title: Optional[str] = None
+    username: Optional[str] = None

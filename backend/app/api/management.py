@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from sqlmodel import select, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, timezone, date, timedelta
 import csv
 import io
 from pathlib import Path
@@ -12,7 +12,8 @@ from app.api.deps import require_management, get_db
 from app.core.config import get_settings
 from app.models import (
     User, Collector, Recycler, PickupRequest, WasteBatch,
-    PublicBin, AuditLog, Report, UserRole, PickupStatus, BatchStatus
+    PublicBin, AuditLog, Report, UserRole, PickupStatus, BatchStatus,
+    RewardLedger, Redemption
 )
 from app.schemas import (
     UserCreate, UserResponse, UserUpdate, CollectorResponse, CollectorUpdate,
@@ -60,6 +61,9 @@ async def get_dashboard_summary(
         {"waste_type": row[0], "total_kg": row[1], "count": row[2]}
         for row in by_type_result.all()
     ]
+
+    points_issued = await db.execute(select(func.coalesce(func.sum(RewardLedger.points), 0)))
+    points_redeemed = await db.execute(select(func.coalesce(func.sum(Redemption.points_spent), 0)))
     
     return {
         "users": {
@@ -80,6 +84,8 @@ async def get_dashboard_summary(
         },
         "total_waste_kg": total_waste,
         "public_bins": bins_count.scalar(),
+        "points_issued": points_issued.scalar(),
+        "points_redeemed": points_redeemed.scalar(),
         "by_waste_type": by_type,
     }
 
@@ -409,7 +415,7 @@ async def update_bin(
     for field, value in update_data.items():
         setattr(bin, field, value)
     
-    bin.updated_at = datetime.utcnow()
+    bin.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(bin)
     return bin

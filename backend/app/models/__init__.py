@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum as PyEnum
 from typing import Optional, List
 from sqlmodel import SQLModel, Field, Relationship, Column, Enum
@@ -38,7 +38,7 @@ class User(SQLModel, table=True):
     role: UserRole = Field(sa_column=Column(Enum(UserRole), nullable=False, index=True))
     email: str = Field(unique=True, index=True, max_length=100)
     phone: Optional[str] = Field(default=None, max_length=20)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     is_active: bool = Field(default=True, nullable=False)
     
     collector_profile: Optional["Collector"] = Relationship(back_populates="user")
@@ -47,6 +47,7 @@ class User(SQLModel, table=True):
     audit_logs: List["AuditLog"] = Relationship(back_populates="actor")
     reports: List["Report"] = Relationship(back_populates="generated_by_user")
     created_bins: List["PublicBin"] = Relationship(back_populates="created_by_user")
+    redemptions: List["Redemption"] = Relationship(back_populates="user")
 
 
 class Collector(SQLModel, table=True):
@@ -90,7 +91,7 @@ class PickupRequest(SQLModel, table=True):
         default=PickupStatus.PENDING, 
         sa_column=Column(Enum(PickupStatus), nullable=False, index=True)
     )
-    requested_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    requested_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     collected_at: Optional[datetime] = Field(default=None)
     
     user: User = Relationship(back_populates="pickup_requests")
@@ -124,7 +125,7 @@ class AuditLog(SQLModel, table=True):
     action: str = Field(max_length=100)
     entity_type: str = Field(max_length=50)
     entity_id: int
-    timestamp: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     
     actor: User = Relationship(back_populates="audit_logs")
 
@@ -136,7 +137,7 @@ class Report(SQLModel, table=True):
     generated_by: int = Field(foreign_key="users.id", nullable=False)
     report_type: str = Field(max_length=50)
     file_url: str = Field(max_length=500)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     
     generated_by_user: User = Relationship(back_populates="reports")
 
@@ -151,7 +152,67 @@ class PublicBin(SQLModel, table=True):
     accepted_waste_types: List[str] = Field(sa_column=Column(JSON), default_factory=list)
     capacity_kg: float = Field(default=0.0)
     created_by: int = Field(foreign_key="users.id", nullable=False)
-    created_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
-    updated_at: datetime = Field(default_factory=datetime.utcnow, nullable=False)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
     
     created_by_user: User = Relationship(back_populates="created_bins")
+
+class RewardLedger(SQLModel, table=True):
+    """One row per reward event. Idempotent via unique pickup_id/batch_id."""
+    __tablename__ = "reward_ledger"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
+    pickup_id: Optional[int] = Field(default=None, foreign_key="pickup_requests.id", unique=True, index=True)
+    batch_id: Optional[int] = Field(default=None, foreign_key="waste_batches.id", index=True)
+    waste_type: str = Field(max_length=50)
+    weight_kg: float = Field(gt=0)
+    points: int = Field(default=0)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+
+
+class RewardBalance(SQLModel, table=True):
+    """Running balance per resident user."""
+    __tablename__ = "reward_balances"
+
+    user_id: int = Field(foreign_key="users.id", primary_key=True)
+    balance: int = Field(default=0)
+    lifetime_earned: int = Field(default=0)
+
+
+class Voucher(SQLModel, table=True):
+    """A redeemable reward voucher created by management."""
+    __tablename__ = "vouchers"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    title: str = Field(max_length=120)
+    description: str = Field(max_length=500, default="")
+    cost_points: int = Field(gt=0)
+    active: bool = Field(default=True, nullable=False)
+    created_by: int = Field(foreign_key="users.id", nullable=False)
+    valid_until: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+
+
+class RedemptionStatus(str, PyEnum):
+    PENDING = "pending"
+    ISSUED = "issued"
+    CANCELLED = "cancelled"
+
+
+class Redemption(SQLModel, table=True):
+    """A resident redeeming points for a voucher."""
+    __tablename__ = "redemptions"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    user_id: int = Field(foreign_key="users.id", nullable=False, index=True)
+    voucher_id: int = Field(foreign_key="vouchers.id", nullable=False, index=True)
+    points_spent: int = Field(default=0)
+    status: RedemptionStatus = Field(
+        default=RedemptionStatus.PENDING,
+        sa_column=Column(Enum(RedemptionStatus), nullable=False, index=True),
+    )
+    redeemed_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc).replace(tzinfo=None), nullable=False)
+
+    voucher: "Voucher" = Relationship()
+    user: "User" = Relationship(back_populates="redemptions")

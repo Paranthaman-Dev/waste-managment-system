@@ -271,40 +271,41 @@ else
   info "Skipping backend (--no-backend)"
 fi
 
-# ---------- 6. frontend via npm ----------
+# ---------- 6. frontend portals via npm workspaces ----------
 if [[ $RUN_FRONTEND -eq 1 ]]; then
-  if [[ ! -d frontend ]]; then
-    warn "frontend/ not found, skipping frontend"
+  if [[ ! -d apps ]]; then
+    warn "apps/ not found, skipping frontend portals"
   else
     if ! command -v npm >/dev/null 2>&1; then
       warn "npm not found, skipping frontend (install nodejs)"
     else
-      info "Installing frontend deps (npm install)..."
-      (cd frontend && npm install --silent || npm install)
-      # ensure VITE_API_URL points to backend
-      if ! grep -q "VITE_API_URL" frontend/.env 2>/dev/null; then
-        echo "VITE_API_URL=http://localhost:8000" > frontend/.env
-      fi
-      info "Starting frontend (vite) on http://127.0.0.1:5173 ..."
-      if command -v lsof >/dev/null 2>&1; then
-        lsof -ti:5173 | xargs kill -9 2>/dev/null || true
-      fi
-      (cd frontend && VITE_API_URL=http://localhost:8000 npm run dev -- --host 0.0.0.0 --port 5173 > /tmp/waste-frontend.log 2>&1) &
-      FRONTEND_PID=$!
-      echo "$FRONTEND_PID" > /tmp/waste-frontend.pid
-      for i in {1..20}; do
-        if curl -sf http://127.0.0.1:5173 >/dev/null 2>&1; then
-          ok "Frontend healthy (PID $FRONTEND_PID) → http://127.0.0.1:5173 (log: /tmp/waste-frontend.log)"
-          break
+      info "Installing workspace deps (npm install)..."
+      (cd "$PROJECT_ROOT" && npm install --silent || npm install)
+      # map each portal to its dev port; all default to backend on :8000
+      declare -A PORTALS=( [resident]=5173 [collector]=5174 [recycler]=5175 [admin]=5176 )
+      for name in "${!PORTALS[@]}"; do
+        port="${PORTALS[$name]}"
+        info "Starting portal @wm/$name on http://127.0.0.1:$port ..."
+        if command -v lsof >/dev/null 2>&1; then
+          lsof -ti:$port | xargs kill -9 2>/dev/null || true
         fi
-        sleep 1
-        if [[ $i -eq 15 ]]; then
-          info "Frontend still starting (vite can take ~10s)..."
-        fi
-        if [[ $i -eq 20 ]]; then
-          warn "Frontend not yet responding (see /tmp/waste-frontend.log)"
-          tail -n 30 /tmp/waste-frontend.log || true
-        fi
+        (cd "$PROJECT_ROOT" && VITE_API_URL=http://localhost:8000 npm run dev -w "@wm/$name" -- --port "$port" --host > "/tmp/waste-$name.log" 2>&1) &
+        echo "$!" > "/tmp/waste-$name.pid"
+      done
+      # wait for all portals to respond
+      for name in "${!PORTALS[@]}"; do
+        port="${PORTALS[$name]}"
+        for i in {1..25}; do
+          if curl -sf "http://127.0.0.1:$port" >/dev/null 2>&1; then
+            ok "Portal $name healthy → http://127.0.0.1:$port (log: /tmp/waste-$name.log)"
+            break
+          fi
+          sleep 1
+          if [[ $i -eq 25 ]]; then
+            warn "Portal $name not responding (see /tmp/waste-$name.log)"
+            tail -n 20 "/tmp/waste-$name.log" || true
+          fi
+        done
       done
     fi
   fi
@@ -315,33 +316,42 @@ fi
 # ---------- 7. summary & wait ----------
 bold "All services started!"
 echo "  Backend : http://127.0.0.1:8000  (health http://127.0.0.1:8000/health, docs http://127.0.0.1:8000/docs)"
-echo "  Frontend: http://127.0.0.1:5173  (VITE_API_URL=http://localhost:8000)"
+echo "  Portals :"
+echo "    Resident  → http://127.0.0.1:5173  (role: user)"
+echo "    Collector → http://127.0.0.1:5174  (role: collector)"
+echo "    Recycler  → http://127.0.0.1:5175  (role: recycler)"
+echo "    Admin     → http://127.0.0.1:5176  (role: management)"
 if [[ "$MODE" == "postgres" ]]; then
   echo "  Postgres: localhost:5432  db=${POSTGRES_DB:-waste_management} user=${POSTGRES_USER:-waste_user} (container waste-postgres via $COMPOSE, volume postgres_data)"
 else
   echo "  SQLite : ./test.db (DATABASE_URL=$DATABASE_URL)"
 fi
-echo "  Logs    : /tmp/waste-backend.log  /tmp/waste-frontend.log  (podman logs waste-postgres)"
+echo "  Logs    : /tmp/waste-backend.log  /tmp/waste-{resident,collector,recycler,admin}.log"
 echo ""
-echo "Demo credentials (seeded): admin / admin123  (role: management)"
-echo "Press Ctrl+C to stop all (backend+frontend). Postgres will keep running (use '$COMPOSE down' to stop)."
+echo "Demo credentials (seeded): admin/admin123, user1/user123, collector1/collector123, recycler1/recycler123"
+echo "  (seed with: PYTHONPATH=backend ./.venv/bin/python -m app.db.seed_demo)"
+echo "Press Ctrl+C to stop all (backend+portals). Postgres will keep running (use '$COMPOSE down' to stop)."
 echo ""
 
 # trap for cleanup of venv services (keep postgres)
 cleanup() {
   echo ""
-  warn "Shutting down backend/frontend..."
+  warn "Shutting down backend/portals..."
   [[ -f /tmp/waste-backend.pid ]] && kill "$(cat /tmp/waste-backend.pid)" 2>/dev/null || true
-  [[ -f /tmp/waste-frontend.pid ]] && kill "$(cat /tmp/waste-frontend.pid)" 2>/dev/null || true
+  for name in resident collector recycler admin; do
+    [[ -f "/tmp/waste-$name.pid" ]] && kill "$(cat "/tmp/waste-$name.pid")" 2>/dev/null || true
+  done
   # also kill by port as fallback
   if command -v lsof >/dev/null 2>&1; then
     lsof -ti:8000 | xargs kill -9 2>/dev/null || true
-    lsof -ti:5173 | xargs kill -9 2>/dev/null || true
+    for port in 5173 5174 5175 5176; do
+      lsof -ti:$port | xargs kill -9 2>/dev/null || true
+    done
   else
     pkill -f "uvicorn backend.app.main:app" 2>/dev/null || true
     pkill -f "vite" 2>/dev/null || true
   fi
-  ok "Backend/frontend stopped. Postgres still running (use '$COMPOSE down' or 'podman stop waste-postgres')."
+  ok "Backend/portals stopped. Postgres still running (use '$COMPOSE down' or 'podman stop waste-postgres')."
   exit 0
 }
 trap cleanup INT TERM

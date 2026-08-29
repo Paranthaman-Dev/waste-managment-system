@@ -1,12 +1,25 @@
 # AGENTS.md – Quick‑Start & Gotchas for the Waste‑Management Repo
 
 ## Core entrypoints
-- **Backend (FastAPI)** – `backend/app/main.py`.  Run with `uvicorn backend.app.main:app`.
-- **Frontend (React/Vite)** – `frontend/` – start with `npm run dev`.
-- **Container stack** – `podman-compose.yml` defines `postgres`, `backend`, `frontend` services.
+- **Backend (FastAPI)** – `backend/app/main.py`.  Run with `uvicorn backend.app.main:app` from the root `./.venv`.
+- **Frontend portals (npm workspaces)** – 4 role‑specific Vite apps under `apps/`:
+  - `apps/resident` → :5173 (role `user`)
+  - `apps/collector` → :5174 (role `collector`)
+  - `apps/recycler` → :5175 (role `recycler`)
+  - `apps/admin` → :5176 (role `management`)
+- **shared package** – `packages/shared` (`@wm/shared`): design tokens, UI primitives, API client, auth, router, Leaflet map.
+- **Container stack** – `podman-compose.yml` defines only `postgres` and `backend` services; the four frontend portals run locally via npm workspaces (start.sh launches all of them).
+
+## Monorepo & portals
+- Install everything once at the root: `npm install` (workspaces link `apps/*` + `packages/shared`).
+- Start one portal: `npm run dev -w @wm/resident` (similarly `collector`, `recycler`, `admin`).
+- Build all portals: `npm run build`.  Typecheck: `npm run typecheck`.
+- `@wm/shared` is aliased per app via `vite.config.ts` (`find: /^@wm\/shared$/`) and via `tsconfig.base.json` path mapping for types.  Its CSS (`@wm/shared/styles.css`) and tokens are pulled through `package.json` `exports` map.
+- The API base URL defaults to `http://localhost:8000` (`VITE_API_URL` overrides it); CORS is `allow_origins=["*"]` so all four origins work with no backend change.
+- Login is JSON `POST /auth/login` `{username, password}` → `{access_token, refresh_token, role}`.  The frontend stores tokens in localStorage (`wm_access_token`, `wm_refresh_token`, `wm_role`).
 
 ## Local development without containers
-1. **Create a venv (Python 3.12 recommended)**
+1. **Create a venv** for the backend:
    ```bash
    python3.12 -m venv venv
    source venv/bin/activate
@@ -21,15 +34,17 @@
    ```
 3. **Run the API**
    ```bash
-   uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload
+   DATABASE_URL=sqlite+aiosqlite:///./test.db JWT_SECRET_KEY=supersecretkey \
+     ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
    ```
    *The startup hook creates all tables on first run.*
-4. **Frontend dev** (from `frontend/`):
+4. **Seed demo accounts** (one per role) and start portals:
    ```bash
-   npm install
-   npm run dev   # defaults to http://localhost:5173
+   DATABASE_URL="sqlite+aiosqlite:///./test.db" JWT_SECRET_KEY=supersecretkey PYTHONPATH="$PWD/backend:$PWD" \
+     ./.venv/bin/python -m app.db.seed_demo
+   npm run dev -w @wm/resident    # :5173 (and collector/recycler/admin on their ports)
    ```
-   Set `VITE_API_URL=http://localhost:8000` if the API runs on a different host/port.
+   Demo logins: `user1/user123`, `collector1/collector123`, `recycler1/recycler123`, `admin/admin123`.
 
 ## Quick full‑stack start (PostgreSQL) – use the provided `start.sh`
 ```bash
@@ -41,7 +56,8 @@
   - Waits for the health‑check to succeed.
   - Exports `DATABASE_URL` pointing to the local Postgres instance.
   - Runs `uvicorn` on `http://127.0.0.1:8000`.
-- **If you don’t have `podman‑compose`**, install it (`pip install podman-compose`) or replace the start‑up block with a local Docker command.
+  - Starts all four frontend portals (resident/collector/recycler/admin) on ports 5173–5176.
+- **If you don’t have `podman‑compose`**, install it (`pip install podman-compose`), use Docker instead, or use SQLite mode (`./start.sh --sqlite`) which needs no containers.
 
 ## Database & migrations
 - **Migrations** live in `backend/alembic/`.  Apply the latest schema with:
@@ -87,7 +103,7 @@
 - **`.env` is ignored**.  If you accidentally commit it, Git will refuse; ensure it stays local.
 - **Uploads directory** – The backend writes files to `$UPLOAD_DIR`.  The repo’s `.gitignore` excludes `uploads/` and `backend/uploads/`; create it manually (`mkdir -p uploads`) when running locally.
 - **Podman vs Docker** – The compose file is written for Podman.  If you only have Docker, replace `podman-compose` with `docker-compose` in `start.sh`.
-- **Seed admin script** – `backend/app/db/seed.py` is a stub; the repo currently seeds admin via the README demo credentials (admin/admin123).  No automatic seed is run on startup.
+- **Seed demo users** – `backend/app/db/seed_demo.py` idempotently creates one account per role plus the collector/recycler profile rows.  Run it with `PYTHONPATH=backend` (it calls `SQLModel.metadata.create_all` itself).  Use `backend/app/db/seed.py` if you only need the management `admin` account.  No seed runs automatically on startup.
 
 ## Cleaning up remote branches
 If stray branches appear on the GitHub remote, delete them in one line:
@@ -98,16 +114,20 @@ git branch -r | grep -v "origin/master" | sed 's|origin/||' | xargs -n1 git push
 
 ## Reference files (high‑value sources)
 - `README.md` – overall stack, dev commands, demo credentials.
-- `podman-compose.yml` – container definitions.
+- `package.json` – workspace scripts (`build`, `typecheck`, `dev -w @wm/<name>`).
+- `packages/shared/src/` – design tokens (`tokens.css`), UI primitives, API client, auth, router, Leaflet map `BinMap`, `AppShell`, `AuthPage`.
+- `podman-compose.yml` – container definitions (postgres + backend only).
 - `backend/app/main.py` – FastAPI entry point and DB bootstrap.
 - `backend/requirements.txt` – exact backend deps; note the need for `pydantic[email]` and `python-multipart`.
-- `start.sh` – the single‑command dev entry point.
+- `backend/app/db/seed_demo.py` – idempotent demo‑user seed for all four roles.
+- `start.sh` – the single‑command dev entry point (backend + all four portals).
 - `backend/tests/` – shows required fixtures and DB usage.
 - `backend/alembic/` – migration source of truth.
 
 ---
 **Bottom line for an agent:**
-- Use `./start.sh` for the quickest full‑stack start (it handles venv, deps, Postgres, and uvicorn).  
-- For container‑free work, follow the three‑step venv → .env → `uvicorn` flow.  
-- Never forget to install `python-multipart` and `pydantic[email]`; otherwise login will crash.  
+- Use `./start.sh` for the quickest start (venv, deps, Postgres, uvicorn, and all four portals).
+- For container‑free work, SQLite + `./.venv/bin/uvicorn backend.app.main:app` and the four `npm run dev -w` commands are all you need.
+- Never forget `python-multipart` and `pydantic[email]`; otherwise login will crash.
+- Run `npm run build` (all portals) after touching `packages/shared` — the change is shared across every app.
 - Run migrations only when you need schema changes; otherwise rely on the automatic `create_all`.

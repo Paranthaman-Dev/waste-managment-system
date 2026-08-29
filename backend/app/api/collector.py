@@ -2,13 +2,13 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, timezone, date, timedelta
 
 from app.api.deps import require_collector, get_db
-from app.models import User, Collector, PickupRequest, PickupStatus
+from app.models import User, Collector, PickupRequest, PickupStatus, WasteBatch, BatchStatus
 from app.schemas import (
     CollectorResponse, CollectorUpdate, PickupRequestResponse,
-    PickupRequestUpdate, PaginatedResponse
+    PickupCollectResponse, PickupRequestUpdate, PaginatedResponse
 )
 
 router = APIRouter(prefix="/collector", tags=["collector"])
@@ -186,7 +186,7 @@ async def decline_pickup(
     return pickup
 
 
-@router.put("/pickups/{pickup_id}/status", response_model=PickupRequestResponse)
+@router.put("/pickups/{pickup_id}/status", response_model=PickupCollectResponse)
 async def update_pickup_status(
     pickup_id: int,
     pickup_data: PickupRequestUpdate,
@@ -208,6 +208,7 @@ async def update_pickup_status(
             detail="Pickup request not found or not assigned to you"
         )
     
+    points_earned = 0
     if pickup_data.status:
         valid_transitions = {
             PickupStatus.ASSIGNED: [PickupStatus.EN_ROUTE, PickupStatus.DECLINED],
@@ -220,11 +221,18 @@ async def update_pickup_status(
             )
         pickup.status = pickup_data.status
         if pickup_data.status == PickupStatus.COLLECTED:
-            pickup.collected_at = datetime.utcnow()
+            pickup.collected_at = datetime.now(timezone.utc)
+            existing_batch = await db.execute(
+                select(WasteBatch).where(WasteBatch.pickup_request_id == pickup.id)
+            )
+            if not existing_batch.scalar_one_or_none():
+                db.add(WasteBatch(pickup_request_id=pickup.id, status=BatchStatus.AVAILABLE))
+            from app.services.rewards import award_points_for_pickup
+            points_earned = await award_points_for_pickup(db, pickup)
     
     await db.commit()
     await db.refresh(pickup)
-    return pickup
+    return PickupCollectResponse(pickup=PickupRequestResponse.model_validate(pickup), points_earned=points_earned)
 
 
 @router.get("/schedule", response_model=List[PickupRequestResponse])

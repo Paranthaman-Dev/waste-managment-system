@@ -32,12 +32,14 @@ app.add_middleware(
 )
 
 # Register routers from canonical api package (venv-based)
-from .api import auth, user, collector, recycler, management
+from .api import auth, user, collector, recycler, management, rewards, vouchers
 app.include_router(auth.router)
 app.include_router(user.router)
 app.include_router(collector.router)
 app.include_router(recycler.router)
 app.include_router(management.router)
+app.include_router(rewards.router)
+app.include_router(vouchers.router)
 @app.on_event("startup")
 async def on_startup():
     # Create tables if they don't exist (simple sync for demo purposes)

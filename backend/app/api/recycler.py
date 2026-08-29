@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile
 from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, timezone, date
 import os
 import uuid
 from pathlib import Path
@@ -193,7 +193,7 @@ async def accept_batch(
         )
     
     batch.status = BatchStatus.ACCEPTED
-    batch.handed_over_at = datetime.utcnow()
+    batch.handed_over_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(batch)
     return batch
@@ -226,7 +226,13 @@ async def update_batch_status(
         setattr(batch, field, value)
     
     if batch_data.status == BatchStatus.COMPLETED and batch.status != BatchStatus.COMPLETED:
-        batch.processed_at = datetime.utcnow()
+        batch.processed_at = datetime.now(timezone.utc)
+        # Recycler verification: award (or confirm) resident points idempotently.
+        from app.services.rewards import award_points_for_pickup
+        presult = await db.execute(select(PickupRequest).where(PickupRequest.id == batch.pickup_request_id))
+        related_pickup = presult.scalar_one_or_none()
+        if related_pickup is not None:
+            await award_points_for_pickup(db, related_pickup, batch_id=batch.id)
     
     await db.commit()
     await db.refresh(batch)
@@ -277,7 +283,7 @@ async def upload_proof(
     
     if batch.status == BatchStatus.PROCESSING:
         batch.status = BatchStatus.COMPLETED
-        batch.processed_at = datetime.utcnow()
+        batch.processed_at = datetime.now(timezone.utc)
     
     await db.commit()
     await db.refresh(batch)

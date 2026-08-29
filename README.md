@@ -1,50 +1,84 @@
 # Waste Management System
 
-Role-based waste management platform for users, collectors, recyclers, and management.
+Role-based waste management platform built as an npm workspaces monorepo: **4 role‑specific portals** (resident / collector / recycler / admin) sharing a common design-system + API package.
 
 ## Stack
 
-- Backend: FastAPI, SQLModel, PostgreSQL, asyncpg
+- Backend: FastAPI, SQLModel, SQLite (dev) / PostgreSQL (prod), asyncpg
 - Auth: username/password, Argon2 password hashing, JWT access and refresh tokens
-- Frontend: React, Vite, Tailwind CSS, Leaflet/OpenStreetMap
-- Runtime: Podman-compatible containers
+- Frontend portals: React 19, Vite, Tailwind CSS 4, Leaflet/OpenStreetMap
+- Workspaces: npm, `apps/*` (portals) + `packages/shared` (shared UI & API layer)
+
+## Monorepo layout
+
+```
+waste-management/
+├─ apps/
+│  ├─ resident/   → http://localhost:5173   (role: user)
+│  ├─ collector/  → http://localhost:5174   (role: collector)
+│  ├─ recycler/   → http://localhost:5175   (role: recycler)
+│  └─ admin/      → http://localhost:5176   (role: management)
+├─ packages/shared/  @wm/shared — design tokens, UI primitives, API client, auth, map
+├─ backend/          FastAPI app
+└─ package.json      workspace root (scripts below)
+```
 
 ## Features
 
-- Users can create pickup requests, review pickup history, and view public bins on a read-only map.
-- Collectors can view available/assigned pickups, accept requests, update status, and view public bins.
-- Recyclers can request/accept waste batches, update processing status, and upload proof images.
-- Management can review dashboard metrics, create users, manage public bins on a map, and generate CSV reports.
+- **Resident** — request pickups, track request status, view disposal sites map.
+- **Collector** — browse available requests, add to route, update pickup status, view drop‑off sites.
+- **Recycler** — claim/process waste batches, upload proof images, view plant analytics.
+- **Management (Admin)** — city dashboards, manage disposal sites on a map, manage user accounts, audit log, CSV report exports.
 
 ## Prerequisites
 
-- Podman and podman-compose
-- Node.js 22+ for local frontend development
-- Python 3.12 for local backend development
+- Node.js 20+ and npm
+- Python 3.12+ (`3.14` works with current pins)
+- Podman/podman-compose only if you run PostgreSQL; dev mode uses SQLite.
 
-The backend dependency pins target Python 3.12. Python 3.14 is not currently supported by the pinned `pydantic-core` and `asyncpg` versions.
-
-## Local Setup With Podman
-
-1. Copy `.env.example` to `.env`.
-2. Start the stack:
+## Quick start (SQLite, no containers)
 
 ```bash
-podman-compose up --build
-```
+# 1. Install workspace dependencies
+npm install
 
-3. Backend API: `http://localhost:8000`
-4. Frontend: `http://localhost:5173`
+# 2. Seed demo users for every role
+DATABASE_URL="sqlite+aiosqlite:///./test.db" JWT_SECRET_KEY=supersecretkey \
+  PYTHONPATH="$PWD/backend:$PWD" ./.venv/bin/python -m app.db.seed_demo
+
+# 3. Backend on :8000
+DATABASE_URL="sqlite+aiosqlite:///./test.db" JWT_SECRET_KEY=supersecretkey \
+  ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
+
+# 4. Portals (each in its own terminal)
+npm run dev -w @wm/resident     # :5173
+npm run dev -w @wm/collector    # :5174
+npm run dev -w @wm/recycler     # :5175
+npm run dev -w @wm/admin        # :5176
+```
 
 ## Demo Credentials
 
-The backend seed script creates a default management user when the users table is empty:
+`./.venv/bin/python -m app.db.seed_demo` seeds one account per role:
 
-- Username: `admin`
-- Password: `admin123`
-- Role: `management`
+| Role      | Username     | Password     | Portal      |
+|-----------|--------------|--------------|-------------|
+| Resident  | `user1`      | `user123`    | :5173       |
+| Collector | `collector1` | `collector123`| :5174      |
+| Recycler  | `recycler1`  | `recycler123`| :5175       |
+| Admin     | `admin`      | `admin123`   | :5176       |
 
-Change these before any non-local use.
+The login page of every portal shows these as one‑click demo chips.
+
+## Scripts (root `package.json`)
+
+```bash
+npm run build              # build all 4 portals to apps/<name>/dist
+npm run dev -w @wm/<name>  # run a single portal dev server
+npm run typecheck          # typecheck all workspaces
+```
+
+Backend runs from the root `./.venv` (see `start.sh` for the full bootstrap).
 
 ## Backend Development
 
@@ -60,19 +94,9 @@ Run tests:
 PYTHONPATH=backend UPLOAD_DIR=/tmp/waste-management-test-uploads venv/bin/pytest backend/tests
 ```
 
-## Frontend Development
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-Set `VITE_API_URL` if the API is not running at `http://localhost:8000`.
-
 ## Migrations
 
-Alembic configuration lives in `backend/alembic.ini`, with migrations in `backend/alembic/versions`.
+Alembic lives in `backend/alembic`, configured via `backend/alembic.ini`.
 
 ```bash
 cd backend
@@ -81,6 +105,5 @@ alembic -c alembic.ini upgrade head
 
 ## Notes
 
-- Public bin locations are persisted in PostgreSQL.
-- Proof images and generated reports are served from `/uploads` and persisted by the `upload_data` named volume in `podman-compose.yml`.
+- Proof images and generated reports are served from `$UPLOAD_DIR` (default `./uploads`).
 - No Redis, MinIO, OAuth, SSO, or paid cloud services are required.
