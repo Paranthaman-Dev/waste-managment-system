@@ -1,79 +1,122 @@
 import { useAuth } from '../context/AuthContext';
 
-// Luxury Cybercore – Y2K Chrome + Midnight OLED + Conceptual Sketch
+const roleMeta: Record<string, { label: string; desc: string; accent: string }> = {
+  user: { label: 'Resident', desc: 'Request & track pickups', accent: 'bg-emerald-500' },
+  collector: { label: 'Collector', desc: 'Field operations', accent: 'bg-blue-500' },
+  recycler: { label: 'Recycler', desc: 'Batch processing', accent: 'bg-violet-500' },
+  management: { label: 'Operations', desc: 'Control center', accent: 'bg-slate-800' },
+};
+
 export function Layout({ children }: { children: React.ReactNode }) {
   const { user, role, logout } = useAuth();
+  const meta = role ? roleMeta[role] ?? roleMeta.user : null;
 
   return (
-    <div className="min-h-screen bg-midnight text-paper selection:bg-neon-cyan selection:text-ink">
-      {/* Sketch grid + scanline are in body::before/after */}
-      <header className="sticky top-0 z-40 border-b border-white/[0.06] bg-ink/80 backdrop-blur-xl">
-        <div className="absolute inset-0 bg-gradient-to-r from-neon-cyan/[0.04] via-transparent to-neon-pink/[0.04] pointer-events-none" />
-        <div className="relative mx-auto flex max-w-[1440px] flex-col gap-4 px-4 py-4 sm:flex-row sm:items-center sm:justify-between lg:px-6">
-          <div className="flex items-center gap-4">
-            <div className="hidden sm:flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-neon-cyan to-teal-600 text-ink font-mono text-sm font-bold shadow-neon-cyan">W♻</div>
-            <div>
-              <p className="font-mono text-[10px] uppercase tracking-[0.35em] text-neon-cyan/70">WASTE OPS — HUD v2.4</p>
-              <h1 className="font-display text-[22px] leading-none tracking-tighter text-white">
-                WASTE<span className="font-serif italic font-normal text-neon-cyan">Lux</span>
-                <span className="ml-2 font-mono text-[11px] font-medium tracking-widest text-white/40">Y2K / CYBERCORE / SKETCH</span>
+    <div className="min-h-screen bg-background text-foreground selection:bg-primary/10">
+      {/* Top navigation – elegant glass SaaS */}
+      <header className="sticky top-0 z-40 border-b border-slate-200/60 bg-white/80 backdrop-blur-[12px] supports-[backdrop-filter]:bg-white/70">
+        <div className="mx-auto flex h-[64px] max-w-[1440px] items-center justify-between gap-4 px-4 sm:px-6 lg:px-8">
+          {/* Brand – elegant typography */}
+          <div className="flex items-center gap-3">
+            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-slate-900 text-white shadow-soft">
+              <span className="text-[11px] font-extrabold tracking-widest">W♻</span>
+            </div>
+            <div className="hidden sm:block">
+              <h1 className="font-sans text-[17px] font-bold tracking-tight text-slate-900 leading-none">
+                Waste<span className="font-light text-slate-500">Flow</span>
+                <span className="ml-2 rounded-full bg-slate-900 px-2 py-0.5 text-[10px] font-semibold tracking-widest text-white">SAAS</span>
               </h1>
-              <p className="font-mono text-[10px] uppercase tracking-[0.2em] text-white/35">Role-based ops • efficient • unambiguous</p>
+              <p className="text-[11px] font-medium tracking-wide text-slate-500">Elegant waste operations • SaaS platform</p>
+            </div>
+            {/* Mobile brand */}
+            <div className="sm:hidden">
+              <h1 className="font-bold text-[16px] tracking-tight text-slate-900">WasteFlow</h1>
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            <div className="hidden md:flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.06] px-3 py-1.5 backdrop-blur">
-              <span className="h-2 w-2 animate-pulse rounded-full bg-neon-green shadow-[0_0_8px_rgba(0,255,136,0.8)]" />
-              <span className="font-mono text-[11px] uppercase tracking-widest text-white/60">System · Online</span>
+
+          {/* Center – role indicator + status – hidden on mobile */}
+          <div className="hidden lg:flex items-center gap-3">
+            <div className="hidden xl:flex items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5">
+              <span className="h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+              <span className="text-[11px] font-semibold tracking-wide text-slate-600">All systems operational</span>
+              <span className="text-slate-300">•</span>
+              <span className="text-[11px] font-medium text-slate-500">API 127ms</span>
             </div>
-            <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-white px-3 py-2 shadow-hud">
-              <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-ink to-midnight grid place-items-center text-white font-mono text-xs font-bold">
-                {(user?.username ?? 'G').slice(0,1).toUpperCase()}
+            {meta && (
+              <div className="flex items-center gap-2.5 rounded-full border border-slate-200 bg-white px-3 py-1.5 shadow-sm">
+                <span className={`h-2 w-2 rounded-full ${meta.accent}`} />
+                <span className="text-xs font-semibold tracking-tight text-slate-800">{meta.label}</span>
+                <span className="hidden xl:inline text-xs text-slate-400">— {meta.desc}</span>
               </div>
-              <div className="pr-1 text-left leading-none">
-                <p className="font-display text-sm font-bold tracking-tight text-ink">{user?.username ?? 'Guest'}</p>
-                <p className="font-mono text-[11px] uppercase tracking-widest text-teal-800/60">{role ?? '—'} · {user?.email?.split('@')[0] ?? 'guest'}</p>
-              </div>
-            </div>
-            {user && (
-              <button
-                onClick={logout}
-                className="hidden sm:inline-flex min-h-[44px] items-center justify-center rounded-xl border border-white/10 bg-white/10 px-4 py-2 font-mono text-xs font-semibold uppercase tracking-widest text-white backdrop-blur hover:bg-white hover:text-ink transition-colors"
-              >
-                Logout
-              </button>
             )}
+          </div>
+
+          {/* Right – user + actions */}
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white py-1 pl-1 pr-3 shadow-sm">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-slate-900 text-xs font-bold text-white">
+                {(user?.username ?? 'G').slice(0, 1).toUpperCase()}
+              </div>
+              <div className="hidden sm:block text-left leading-none">
+                <p className="text-[13px] font-semibold tracking-tight text-slate-900">{user?.username ?? 'Guest'}</p>
+                <p className="text-[11px] font-medium text-slate-500 capitalize">{role ?? '—'} • {user?.email?.split('@')[0] ?? 'guest'}</p>
+              </div>
+              <span className="hidden sm:inline h-4 w-px bg-slate-200" />
+              <span className="hidden sm:inline text-[11px] font-semibold uppercase tracking-widest text-slate-400">PRO</span>
+            </div>
+
             {user && (
-              <button
-                onClick={logout}
-                className="sm:hidden grid h-11 w-11 place-items-center rounded-xl bg-white text-ink"
-                aria-label="Logout"
-              >
-                ✕
-              </button>
+              <>
+                <button
+                  onClick={logout}
+                  className="hidden sm:inline-flex h-9 items-center justify-center rounded-full border border-slate-200 bg-white px-4 text-xs font-semibold tracking-wide text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 transition-colors cursor-pointer"
+                >
+                  Sign out
+                </button>
+                <button
+                  onClick={logout}
+                  className="sm:hidden grid h-9 w-9 place-items-center rounded-full bg-slate-900 text-white hover:bg-black transition-colors"
+                  aria-label="Sign out"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
+                </button>
+              </>
             )}
           </div>
         </div>
-        {/* Y2K chrome divider */}
-        <div className="h-[1px] w-full bg-gradient-to-r from-transparent via-neon-cyan/30 to-transparent" />
       </header>
 
-      <main className="mx-auto max-w-[1440px] px-4 py-6 lg:px-6">
-        {/* Blueprint label */}
-        <div className="mb-4 flex items-center gap-3 font-mono text-[10px] uppercase tracking-[0.3em] text-white/25">
-          <span className="h-px flex-1 bg-white/10" />
-          <span>CONCEPTUAL SKETCH — GRID 24 — HUD LAYER 02</span>
-          <span className="h-px flex-1 bg-white/10" />
+      {/* Main – elegant canvas */}
+      <main className="mx-auto max-w-[1440px] px-4 py-6 sm:px-6 lg:px-8 sm:py-8">
+        {/* Breadcrumb – subtle SaaS */}
+        <div className="mb-6 flex flex-wrap items-center gap-2 text-xs">
+          <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white">
+            <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+            Live
+          </span>
+          <span className="text-slate-300">/</span>
+          <span className="font-medium text-slate-500">WasteFlow OS</span>
+          <span className="text-slate-300">/</span>
+          <span className="font-semibold text-slate-900 capitalize">{role ?? 'dashboard'}</span>
+          <span className="hidden sm:inline-flex ml-auto items-center gap-1.5 text-[11px] font-medium tracking-wide text-slate-400">
+            <span className="hidden md:inline">Designed for</span>
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-600">375</span>
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 font-semibold text-slate-600">768</span>
+            <span className="rounded-full bg-slate-900 px-2 py-0.5 font-semibold text-white">1440+</span>
+          </span>
         </div>
-        {children}
+
+        <div className="animate-[fade-in_0.4s_ease-out]">{children}</div>
       </main>
 
-      <footer className="border-t border-white/5 bg-ink/50 py-6 backdrop-blur">
-        <div className="mx-auto max-w-[1440px] px-4 lg:px-6 flex flex-col sm:flex-row items-center justify-between gap-3 font-mono text-[11px] uppercase tracking-widest text-white/30">
-          <span>© 2026 WasteLux — Luxury Typography • Y2K Chrome • Cybercore HUD • Sketch Grid</span>
-          <span className="flex items-center gap-2">
-            <span className="h-1 w-12 rounded-full bg-gradient-to-r from-neon-cyan to-neon-pink opacity-60" />
-            Efficient • Compatible • 375 768 1024 1440
+      <footer className="border-t border-slate-200/60 bg-white/60 backdrop-blur">
+        <div className="mx-auto flex max-w-[1440px] flex-col items-center justify-between gap-3 px-4 py-6 text-xs sm:flex-row sm:px-6 lg:px-8">
+          <span className="font-medium tracking-tight text-slate-500">
+            © 2026 WasteFlow — Elegant SaaS • Glassmorphism • Plus Jakarta Sans
+          </span>
+          <span className="inline-flex items-center gap-2 font-medium text-slate-400">
+            <span className="h-px w-8 bg-slate-200" />
+            Built for scale • SOC 2 ready • 99.9% uptime
           </span>
         </div>
       </footer>
@@ -81,22 +124,18 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-// HUD Card – white, blur, neon border, sketch
-export function Card({ title, children, action }: { title: string; children: React.ReactNode; action?: React.ReactNode }) {
+// Elegant SaaS Card – white, soft shadow, 20px radius, subtle
+export function Card({ title, children, action, subtitle }: { title: string; children: React.ReactNode; action?: React.ReactNode; subtitle?: string }) {
   return (
-    <section className="relative overflow-hidden rounded-[20px] border border-teal-300/30 bg-white p-5 sm:p-6 shadow-[0_20px_60px_rgba(0,0,0,0.35),0_0_0_1px_rgba(0,255,255,0.08)]">
-      {/* chrome highlight */}
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-[1px] bg-gradient-to-r from-transparent via-white to-transparent opacity-80" />
-      {/* sketch corner */}
-      <div className="pointer-events-none absolute right-3 top-3 h-6 w-6 border-r border-t border-teal-900/10 rounded-tr-xl" />
-      <div className="mb-4 flex items-start justify-between gap-3">
-        <h2 className="font-display text-[18px] font-extrabold tracking-tighter text-ink">
-          {title}
-          <span className="ml-2 font-mono text-[10px] font-medium uppercase tracking-[0.2em] text-neon-cyan/60">— SKETCH 0{Math.floor(Math.random()*9)+1}</span>
-        </h2>
-        {action}
+    <section className="card-elegant relative overflow-hidden rounded-[20px] p-5 sm:p-6">
+      <div className="mb-5 flex items-start justify-between gap-3">
+        <div>
+          <h2 className="font-sans text-[15px] font-bold tracking-tight text-slate-900">{title}</h2>
+          {subtitle && <p className="mt-0.5 text-sm leading-relaxed text-slate-500">{subtitle}</p>}
+        </div>
+        {action && <div className="shrink-0">{action}</div>}
       </div>
-      <div className="relative">{children}</div>
+      <div>{children}</div>
     </section>
   );
 }
@@ -104,21 +143,24 @@ export function Card({ title, children, action }: { title: string; children: Rea
 export function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }) {
   return (
     <label className="grid gap-1.5">
-      <span className="font-mono text-[11px] font-semibold uppercase tracking-[0.2em] text-teal-900/70">{label}</span>
+      <span className="text-[11px] font-semibold uppercase tracking-widest text-slate-600">{label}</span>
       {children}
-      {hint && <span className="font-mono text-[10px] text-teal-900/40">{hint}</span>}
+      {hint && <span className="text-[11px] leading-relaxed text-slate-400">{hint}</span>}
     </label>
   );
 }
 
 export const inputClass =
-  'min-h-[44px] w-full rounded-xl border border-teal-900/15 bg-white px-3.5 py-2.5 font-mono text-[14px] font-medium text-ink placeholder:text-teal-900/30 focus:border-neon-cyan focus:bg-white focus:shadow-neon-cyan outline-none transition-all';
+  'h-11 w-full rounded-xl border border-slate-200 bg-white px-3.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 shadow-sm outline-none transition-all focus:border-primary focus:ring-4 focus:ring-primary/10 hover:border-slate-300';
 
 export const buttonClass =
-  'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl bg-ink px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-[0.14em] text-white shadow-hud hover:bg-black hover:shadow-neon-cyan active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-all';
+  'inline-flex h-11 items-center justify-center gap-2 rounded-xl bg-primary px-5 text-sm font-semibold tracking-tight text-white shadow-sm hover:bg-[#1D4ED8] hover:shadow-md active:scale-[0.98] disabled:opacity-50 disabled:pointer-events-none transition-all cursor-pointer';
 
-export const chromeButtonClass =
-  'inline-flex min-h-[44px] items-center justify-center gap-2 rounded-xl chrome px-5 py-2.5 font-mono text-xs font-bold uppercase tracking-[0.14em] text-ink hover:shadow-neon-cyan active:scale-[0.98] transition-all';
+export const secondaryButtonClass =
+  'inline-flex h-11 items-center justify-center gap-2 rounded-xl border border-slate-200 bg-white px-5 text-sm font-semibold tracking-tight text-slate-700 shadow-sm hover:border-slate-300 hover:bg-slate-50 hover:text-slate-900 active:scale-[0.98] transition-all cursor-pointer';
 
 export const ghostButtonClass =
-  'inline-flex min-h-[44px] items-center justify-center rounded-xl border border-teal-900/15 bg-white px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-widest text-ink hover:border-neon-cyan hover:text-neon-cyan hover:shadow-neon-cyan transition-all';
+  'inline-flex h-10 items-center justify-center rounded-xl border border-slate-200 bg-white px-4 text-xs font-semibold tracking-wide text-slate-700 hover:border-slate-300 hover:bg-slate-50 transition-colors cursor-pointer';
+
+// Keep legacy export for compatibility
+export const chromeButtonClass = secondaryButtonClass;

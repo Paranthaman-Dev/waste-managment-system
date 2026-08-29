@@ -31,50 +31,85 @@ export function UserPanel() {
 
   async function submitPickup(e: FormEvent) {
     e.preventDefault();
-    await apiRequest<PickupRequest>('/user/pickups', {
-      method: 'POST',
-      body: JSON.stringify({ waste_type: wasteType, quantity_kg: quantityKg, location }),
-    }, token);
-    setMessage('Pickup request created — HUD synced.');
+    await apiRequest<PickupRequest>(
+      '/user/pickups',
+      {
+        method: 'POST',
+        body: JSON.stringify({ waste_type: wasteType, quantity_kg: quantityKg, location }),
+      },
+      token,
+    );
+    setMessage('Pickup request created — we’ll notify a collector nearby.');
     await load();
   }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[1.05fr_1.45fr]">
-      {/* Left – Request + History – Bento */}
+      {/* Left – Request + History */}
       <div className="grid gap-6 content-start">
         <Card
-          title="Request Pickup"
-          action={<span className="hidden sm:inline-flex rounded-full bg-ink px-2.5 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-neon-cyan">USER HUD</span>}
+          title="Request a pickup"
+          subtitle="Choose waste type, weight, and precise location"
+          action={<span className="inline-flex rounded-full bg-slate-900 px-2.5 py-1 text-[11px] font-semibold tracking-wide text-white">Resident</span>}
         >
           <form onSubmit={submitPickup} className="grid gap-4">
-            <Field label="Waste type" hint="organic · plastic · e-waste · metal"><input className={inputClass} value={wasteType} onChange={(e) => setWasteType(e.target.value)} placeholder="organic" /></Field>
+            <Field label="Waste type" hint="organic · plastic · e-waste · metal">
+              <select
+                className={inputClass}
+                value={wasteType}
+                onChange={(e) => setWasteType(e.target.value)}
+              >
+                <option value="organic">Organic</option>
+                <option value="plastic">Plastic</option>
+                <option value="e-waste">E-waste</option>
+                <option value="metal">Metal</option>
+                <option value="paper">Paper</option>
+                <option value="glass">Glass</option>
+              </select>
+            </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Quantity kg"><input className={inputClass} type="number" min="0.1" step="0.1" value={quantityKg} onChange={(e) => setQuantityKg(Number(e.target.value))} /></Field>
-              <Field label="Location"><input className={inputClass} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Chennai" /></Field>
+              <Field label="Quantity (kg)">
+                <input className={inputClass} type="number" min="0.1" step="0.1" value={quantityKg} onChange={(e) => setQuantityKg(Number(e.target.value))} />
+              </Field>
+              <Field label="Location">
+                <input className={inputClass} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Chennai, MG Road" />
+              </Field>
             </div>
-            <button className={buttonClass}>Create pickup — Y2K Chrome →</button>
+            <button className={buttonClass}>Create pickup request →</button>
+            <p className="text-center text-[11px] font-medium text-slate-400">Collector assignment within 2h • Track in history</p>
           </form>
-          {message && <p className="mt-3 rounded-xl border border-teal-300/30 bg-teal-50 px-3 py-2 font-mono text-xs font-semibold text-teal-800">{message}</p>}
+          {message && <p className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2.5 text-sm font-medium text-emerald-800">{message}</p>}
         </Card>
 
-        <Card title="Pickup History" action={<span className="font-mono text-[11px] uppercase tracking-widest text-ink/40">{pickups.length} records</span>}>
+        <Card
+          title="Pickup history"
+          subtitle="Recent requests and their status"
+          action={<span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">{pickups.length} records</span>}
+        >
           {pickups.length === 0 ? (
-            <div className="rounded-2xl border border-dashed border-ink/15 bg-skin-paper p-8 text-center">
-              <p className="font-mono text-xs uppercase tracking-widest text-ink/40">No pickups — sketch grid empty</p>
-              <p className="mt-1 font-serif text-sm text-ink/60">Create your first request to see HUD timeline.</p>
+            <div className="rounded-2xl border border-dashed border-slate-200 bg-slate-50 p-8 text-center">
+              <div className="mx-auto flex h-9 w-9 items-center justify-center rounded-xl bg-white border border-slate-200 shadow-sm">
+                <span className="h-2 w-2 rounded-full bg-slate-300" />
+              </div>
+              <p className="mt-3 text-sm font-semibold tracking-tight text-slate-700">No pickups yet</p>
+              <p className="text-xs leading-relaxed text-slate-500">Create your first request — it will appear here with live status.</p>
             </div>
           ) : (
             <div className="grid gap-3 max-h-[420px] overflow-auto pr-1">
               {pickups.map((p) => (
-                <article key={p.id} className="group relative overflow-hidden rounded-2xl border border-ink/10 bg-gradient-to-br from-white to-skin-paper p-4 hover:border-neon-cyan/30 hover:shadow-neon-cyan transition-all">
-                  <div className="absolute left-0 top-0 h-full w-[3px] bg-gradient-to-b from-neon-cyan to-teal-600 opacity-60 group-hover:opacity-100" />
+                <article key={p.id} className="group relative overflow-hidden rounded-2xl border border-slate-200 bg-white p-4 hover:border-slate-300 hover:shadow-sm transition-all">
+                  <div className="absolute left-0 top-0 h-full w-1 bg-primary opacity-80 group-hover:opacity-100 transition-opacity" />
                   <div className="flex items-start justify-between gap-3">
                     <div>
-                      <p className="font-display text-sm font-black tracking-tight text-ink">{p.waste_type} <span className="font-mono text-xs font-medium text-ink/40">· {p.quantity_kg} kg</span></p>
-                      <p className="font-mono text-xs text-ink/60">{p.location} · <span className="inline-flex rounded-full bg-ink px-2 py-0.5 text-[11px] font-bold uppercase tracking-widest text-white">{p.status}</span></p>
+                      <p className="text-sm font-bold tracking-tight text-slate-900 capitalize">
+                        {p.waste_type} <span className="font-medium text-slate-400">· {p.quantity_kg} kg</span>
+                      </p>
+                      <p className="mt-0.5 text-xs font-medium text-slate-500">
+                        {p.location} •{' '}
+                        <span className="inline-flex rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-white capitalize">{p.status}</span>
+                      </p>
                     </div>
-                    <span className="font-mono text-[10px] uppercase tracking-widest text-ink/30">#{p.id}</span>
+                    <span className="text-[11px] font-semibold tracking-wide text-slate-400">#{p.id}</span>
                   </div>
                 </article>
               ))}
@@ -83,22 +118,37 @@ export function UserPanel() {
         </Card>
       </div>
 
-      {/* Right – Map – HUD */}
-      <Card title="Public Bin Map" action={<span className="font-mono text-[10px] uppercase tracking-[0.2em] text-neon-cyan">READ ONLY — CYBERCORE</span>}>
+      {/* Right – Map */}
+      <Card
+        title="Public bins map"
+        subtitle="Nearby collection points — filter by waste type"
+        action={<span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">{bins.length} bins</span>}
+      >
         <Field label="Filter by waste type" hint="plastic, organic, e-waste… leave empty for all">
-          <input className={inputClass} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="plastic, organic..." />
+          <div className="flex gap-2">
+            <input className={inputClass} value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="plastic, organic..." />
+            {filter && (
+              <button type="button" onClick={() => setFilter('')} className={ghostButtonClass}>
+                Clear
+              </button>
+            )}
+          </div>
         </Field>
-        <div className="mt-4 overflow-hidden rounded-[16px] border border-white/10 shadow-hud">
+        <div className="mt-4">
           <BinMap bins={bins} />
         </div>
         <div className="mt-3 flex flex-wrap gap-2">
           {['plastic', 'organic', 'e-waste', 'metal', ''].map((v) => (
-            <button key={v || 'all'} onClick={() => setFilter(v)} className={v === filter ? buttonClass : ghostButtonClass + ' !min-h-[36px] !px-3 !py-1.5 text-[11px]'}>
+            <button
+              key={v || 'all'}
+              onClick={() => setFilter(v)}
+              className={v === filter ? buttonClass + ' !h-8 !px-3 !text-xs' : ghostButtonClass + ' !h-8 !px-3 !text-xs'}
+            >
               {v || 'All'}
             </button>
           ))}
         </div>
-        <p className="mt-3 font-mono text-[11px] uppercase tracking-widest text-ink/30">{bins.length} bins · conceptual sketch grid 24 · HUD layer 02</p>
+        <p className="mt-3 text-[11px] font-medium tracking-wide text-slate-400">{bins.length} bins • Pinch to zoom • Click a pin for details</p>
       </Card>
     </div>
   );

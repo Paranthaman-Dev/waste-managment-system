@@ -1,6 +1,6 @@
 import { FormEvent, useEffect, useState } from 'react';
 import { BinMap } from '../components/BinMap';
-import { Card, Field, inputClass, buttonClass, ghostButtonClass } from '../components/Layout';
+import { Card, Field, inputClass, buttonClass, ghostButtonClass, secondaryButtonClass } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../services/api';
 import type { PaginatedResponse, PublicBin, Role, User } from '../types/api';
@@ -36,7 +36,9 @@ export function ManagementPanel() {
     setUsers(u.items);
     setBins(b);
   }
-  useEffect(() => { load().catch((e) => setMessage(e.message)); }, []);
+  useEffect(() => {
+    load().catch((e) => setMessage(e.message));
+  }, []);
 
   function chooseBin(bin: PublicBin | null) {
     setSelectedBin(bin);
@@ -48,10 +50,10 @@ export function ManagementPanel() {
     const payload = { ...binForm, accepted_waste_types: binForm.accepted_waste_types.split(',').map((s) => s.trim()).filter(Boolean) };
     if (selectedBin) {
       await apiRequest(`/management/bins/${selectedBin.id}`, { method: 'PUT', body: JSON.stringify(payload) }, token);
-      setMessage('Bin updated — sketch persisted.');
+      setMessage('Bin updated successfully.');
     } else {
       await apiRequest('/management/bins', { method: 'POST', body: JSON.stringify(payload) }, token);
-      setMessage('Bin created — HUD added.');
+      setMessage('Bin created — visible on all maps.');
     }
     chooseBin(null);
     await load();
@@ -64,106 +66,161 @@ export function ManagementPanel() {
   }
   async function dragBin(bin: PublicBin, lat: number, lng: number) {
     await apiRequest(`/management/bins/${bin.id}`, { method: 'PUT', body: JSON.stringify({ latitude: lat, longitude: lng }) }, token);
-    setMessage('Bin location updated — cybercore drag.');
+    setMessage('Bin location updated via drag.');
     await load();
   }
   async function createUser(e: FormEvent) {
     e.preventDefault();
     await apiRequest('/management/users', { method: 'POST', body: JSON.stringify(userForm) }, token);
-    setMessage('User created — luxury roster.');
+    setMessage('User created — they can now sign in.');
     setUserForm({ username: '', email: '', password: '', phone: '', role: 'user' });
     await load();
   }
   async function generateReport(type: string) {
     await apiRequest(`/management/reports/${type}`, { method: 'POST' }, token);
-    setMessage(`${type} report — chrome generated.`);
+    setMessage(`${type} report generated — download from server.`);
   }
 
   const totalUsers = summary ? Object.values(summary.users).reduce((a, b) => a + b, 0) : 0;
 
   return (
     <div className="grid gap-6">
-      {message && <div className="rounded-xl border border-neon-cyan/30 bg-white px-4 py-3 font-mono text-xs font-semibold text-ink shadow-neon-cyan">{message}</div>}
+      {message && <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-800">{message}</div>}
 
-      {/* HUD Stats – Bento 4 */}
-      <div className="grid gap-4 md:grid-cols-4">
-        <StatsCard title="Total Users" value={totalUsers} description={`${summary?.users.user ?? 0} user · ${summary?.users.collector ?? 0} collector · ${summary?.users.recycler ?? 0} recycler`} tone="ink" />
-        <StatsCard title="Pending Pickups" value={summary?.pickup_pipeline.pending ?? 0} description={`${summary?.pickup_pipeline.assigned ?? 0} assigned · ${summary?.pickup_pipeline.collected ?? 0} collected`} tone="cyan" trend="▲ HUD" />
-        <StatsCard title="Waste (kg)" value={summary?.total_waste_kg ?? 0} description={`${summary?.batches.available ?? 0} available · ${summary?.batches.completed ?? 0} completed`} tone="amber" />
-        <StatsCard title="Public Bins" value={summary?.public_bins ?? 0} description={`${bins.length} geo-fixed · sketch grid`} tone="pink" />
+      {/* Stats – elegant SaaS bento */}
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <StatsCard title="Total users" value={totalUsers} description={`${summary?.users.user ?? 0} residents • ${summary?.users.collector ?? 0} collectors • ${summary?.users.recycler ?? 0} recyclers`} tone="slate" />
+        <StatsCard title="Pending pickups" value={summary?.pickup_pipeline.pending ?? 0} description={`${summary?.pickup_pipeline.assigned ?? 0} assigned • ${summary?.pickup_pipeline.collected ?? 0} collected`} tone="primary" trend="Live" />
+        <StatsCard title="Waste volume" value={`${summary?.total_waste_kg ?? 0} kg`} description={`${summary?.batches.available ?? 0} batches available • ${summary?.batches.completed ?? 0} completed`} tone="amber" />
+        <StatsCard title="Public bins" value={summary?.public_bins ?? 0} description={`${bins.length} geo-pinned • drag to reposition`} tone="emerald" />
       </div>
 
       <div className="grid gap-6 lg:grid-cols-[1fr_1.35fr]">
-        <Card title={selectedBin ? 'Edit Bin — Sketch' : 'Create Bin — Y2K Chrome'} action={<span className="rounded-full bg-ink px-2 py-1 font-mono text-[10px] font-bold uppercase tracking-widest text-neon-cyan">{bins.length} total</span>}>
+        <Card
+          title={selectedBin ? 'Edit bin' : 'Create bin'}
+          subtitle={selectedBin ? `Editing #${selectedBin.id} — update fields or delete` : 'Add a new public bin — appears on all maps'}
+          action={<span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-600">{bins.length} total</span>}
+        >
           <form onSubmit={saveBin} className="grid gap-4">
-            <Field label="Name"><input className={inputClass} value={binForm.name} onChange={(e) => setBinForm({ ...binForm, name: e.target.value })} placeholder="MG Road Bin 01" /></Field>
+            <Field label="Name">
+              <input className={inputClass} value={binForm.name} onChange={(e) => setBinForm({ ...binForm, name: e.target.value })} placeholder="MG Road Bin 01" required />
+            </Field>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Latitude"><input className={inputClass} type="number" step="0.000001" value={binForm.latitude} onChange={(e) => setBinForm({ ...binForm, latitude: Number(e.target.value) })} /></Field>
-              <Field label="Longitude"><input className={inputClass} type="number" step="0.000001" value={binForm.longitude} onChange={(e) => setBinForm({ ...binForm, longitude: Number(e.target.value) })} /></Field>
+              <Field label="Latitude">
+                <input className={inputClass} type="number" step="0.000001" value={binForm.latitude} onChange={(e) => setBinForm({ ...binForm, latitude: Number(e.target.value) })} />
+              </Field>
+              <Field label="Longitude">
+                <input className={inputClass} type="number" step="0.000001" value={binForm.longitude} onChange={(e) => setBinForm({ ...binForm, longitude: Number(e.target.value) })} />
+              </Field>
             </div>
-            <Field label="Waste types" hint="comma separated — efficient, unambiguous"><input className={inputClass} value={binForm.accepted_waste_types} onChange={(e) => setBinForm({ ...binForm, accepted_waste_types: e.target.value })} /></Field>
-            <Field label="Capacity kg"><input className={inputClass} type="number" value={binForm.capacity_kg} onChange={(e) => setBinForm({ ...binForm, capacity_kg: Number(e.target.value) })} /></Field>
+            <Field label="Accepted waste types" hint="Comma separated — e.g. organic, plastic, e-waste">
+              <input className={inputClass} value={binForm.accepted_waste_types} onChange={(e) => setBinForm({ ...binForm, accepted_waste_types: e.target.value })} />
+            </Field>
+            <Field label="Capacity (kg)">
+              <input className={inputClass} type="number" value={binForm.capacity_kg} onChange={(e) => setBinForm({ ...binForm, capacity_kg: Number(e.target.value) })} />
+            </Field>
             <div className="flex flex-wrap gap-2">
-              <button className={buttonClass}>{selectedBin ? 'Update bin — Sketch' : 'Create bin — Chrome →'}</button>
-              {selectedBin && <button type="button" onClick={() => deleteBin(selectedBin.id)} className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-red-600 px-4 py-2.5 font-mono text-xs font-bold uppercase tracking-widest text-white hover:bg-red-700">Delete</button>}
-              {selectedBin && <button type="button" onClick={() => chooseBin(null)} className={ghostButtonClass}>New bin</button>}
+              <button className={buttonClass}>{selectedBin ? 'Update bin' : 'Create bin →'}</button>
+              {selectedBin && (
+                <button type="button" onClick={() => deleteBin(selectedBin.id)} className="inline-flex h-11 items-center justify-center rounded-xl bg-red-600 px-5 text-sm font-semibold text-white hover:bg-red-700 transition-colors">
+                  Delete
+                </button>
+              )}
+              {selectedBin && (
+                <button type="button" onClick={() => chooseBin(null)} className={ghostButtonClass}>
+                  New bin
+                </button>
+              )}
             </div>
           </form>
-          <div className="mt-5 grid max-h-[180px] gap-2 overflow-auto pr-1">
+          <div className="mt-5 grid max-h-[200px] gap-2 overflow-auto pr-1">
             {bins.map((b) => (
               <button
                 key={b.id}
                 onClick={() => chooseBin(b)}
-                className={`text-left rounded-xl border px-3 py-2.5 font-mono text-xs font-semibold transition-all ${selectedBin?.id === b.id ? 'border-neon-cyan bg-neon-cyan/10 text-ink shadow-neon-cyan' : 'border-ink/10 bg-skin-paper hover:border-neon-cyan/30 hover:bg-white text-ink/70'}`}
+                className={`text-left rounded-xl border px-3 py-2.5 text-sm font-medium transition-all ${selectedBin?.id === b.id ? 'border-primary bg-blue-50 text-slate-900 shadow-sm' : 'border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50 text-slate-600'}`}
               >
-                <span className="font-display font-bold tracking-tight text-ink">{b.name}</span> <span className="text-ink/40">· {b.latitude.toFixed(4)}, {b.longitude.toFixed(4)}</span>
+                <span className="font-semibold tracking-tight text-slate-900">{b.name}</span> <span className="text-slate-400">· {b.latitude.toFixed(4)}, {b.longitude.toFixed(4)}</span>
               </button>
             ))}
+            {bins.length === 0 && <p className="py-6 text-center text-sm text-slate-400">No bins yet — create the first one.</p>}
           </div>
         </Card>
 
-        <Card title="Map — Management HUD" action={<span className="font-mono text-[10px] uppercase tracking-[0.2em] text-neon-pink">DRAG TO PERSIST — CYBERCORE</span>}>
-          <p className="mb-3 font-mono text-xs leading-relaxed text-ink/60">Click map to set form location. Drag marker to persist new location — scanline grid confirms persistence.</p>
-          <div className="overflow-hidden rounded-[16px] border border-white/10 shadow-hud">
+        <Card
+          title="Bin map — control center"
+          subtitle="Click map to set coordinates. Drag a marker to persist."
+          action={<span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-700">Draggable • Click to set</span>}
+        >
+          <div>
             <BinMap bins={bins} editable onPick={(lat, lng) => setBinForm({ ...binForm, latitude: lat, longitude: lng })} onDrag={dragBin} />
           </div>
+          <p className="mt-2 text-[11px] font-medium text-slate-400">Tip: click empty area to autofill lat/lng in the form → save.</p>
         </Card>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card title="Create User — Luxury Roster">
+        <Card title="Create user" subtitle="Add residents, collectors, recyclers or admins">
           <form onSubmit={createUser} className="grid gap-4">
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Username"><input className={inputClass} value={userForm.username} onChange={(e) => setUserForm({ ...userForm, username: e.target.value })} /></Field>
-              <Field label="Email"><input className={inputClass} type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} /></Field>
+              <Field label="Username">
+                <input className={inputClass} value={userForm.username} onChange={(e) => setUserForm({ ...userForm, username: e.target.value })} required />
+              </Field>
+              <Field label="Email">
+                <input className={inputClass} type="email" value={userForm.email} onChange={(e) => setUserForm({ ...userForm, email: e.target.value })} required />
+              </Field>
             </div>
             <div className="grid gap-4 sm:grid-cols-2">
-              <Field label="Password"><input className={inputClass} type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} /></Field>
-              <Field label="Phone"><input className={inputClass} value={userForm.phone} onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} /></Field>
+              <Field label="Password">
+                <input className={inputClass} type="password" value={userForm.password} onChange={(e) => setUserForm({ ...userForm, password: e.target.value })} required />
+              </Field>
+              <Field label="Phone">
+                <input className={inputClass} value={userForm.phone} onChange={(e) => setUserForm({ ...userForm, phone: e.target.value })} placeholder="+91…" />
+              </Field>
             </div>
-            <Field label="Role"><select className={inputClass} value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value as Role })}>{roles.map((r) => <option key={r} value={r}>{r}</option>)}</select></Field>
-            <button className={buttonClass}>Create user — Playfair →</button>
+            <Field label="Role">
+              <select className={inputClass} value={userForm.role} onChange={(e) => setUserForm({ ...userForm, role: e.target.value as Role })}>
+                {roles.map((r) => (
+                  <option key={r} value={r} className="capitalize">
+                    {r}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <button className={buttonClass}>Create user →</button>
           </form>
         </Card>
 
-        <Card title="Users & Reports — Chrome">
+        <Card
+          title="Users & reports"
+          subtitle="Roster and on-demand exports"
+          action={
+            <span className="hidden sm:inline text-[11px] font-semibold tracking-wide text-slate-400">
+              {users.length} users
+            </span>
+          }
+        >
           <div className="mb-4 flex flex-wrap gap-2">
             {(['users', 'pickups', 'batches', 'bins'] as const).map((t) => (
-              <button key={t} onClick={() => generateReport(t)} className="inline-flex min-h-[36px] items-center justify-center rounded-xl chrome px-3.5 py-2 font-mono text-[11px] font-bold uppercase tracking-widest text-ink">
+              <button key={t} onClick={() => generateReport(t)} className={secondaryButtonClass + ' !h-9 !px-3.5 !text-xs capitalize'}>
                 {t} report
               </button>
             ))}
           </div>
-          <div className="grid max-h-[280px] gap-2 overflow-auto pr-1">
+          <div className="grid max-h-[300px] gap-2 overflow-auto pr-1">
             {users.map((u) => (
-              <div key={u.id} className="flex items-center justify-between rounded-xl border border-ink/10 bg-white px-3 py-2.5">
+              <div key={u.id} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2.5 hover:border-slate-300 transition-colors">
                 <div>
-                  <p className="font-display text-sm font-bold tracking-tight text-ink">{u.username} <span className="ml-2 rounded-full bg-ink px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-widest text-neon-cyan">{u.role}</span></p>
-                  <p className="font-mono text-xs text-ink/50">{u.email}</p>
+                  <p className="text-sm font-semibold tracking-tight text-slate-900">
+                    {u.username}
+                    <span className="ml-2 inline-flex rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-semibold tracking-wide text-white capitalize">{u.role}</span>
+                  </p>
+                  <p className="text-xs font-medium text-slate-500">{u.email}</p>
                 </div>
-                <span className="h-2 w-2 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.6)]" />
+                <span className="h-2 w-2 rounded-full bg-emerald-500 ring-4 ring-emerald-50" />
               </div>
             ))}
+            {users.length === 0 && <p className="py-8 text-center text-sm text-slate-400">No users yet.</p>}
           </div>
         </Card>
       </div>
