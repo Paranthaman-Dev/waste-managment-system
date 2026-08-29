@@ -1,17 +1,16 @@
 from datetime import timedelta
-from fastapi import APIRouter, Depends, HTTPException, status, Response
+from fastapi import APIRouter, Depends, HTTPException, status, Response, Request
+from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from slowapi import Limiter
-from slowapi.util import get_remote_address
 
 from app.core.security import (
     verify_password, get_password_hash, 
-    create_token_pair, decode_token
+    create_token_pair, decode_token, is_token_revoked, revoke_token
 )
 from app.core.config import get_settings
 from app.db.session import get_db
-from app.api.deps import get_current_user
+from app.api.deps import get_current_user, limiter
 from app.models import User, UserRole
 from app.schemas import (
     UserCreate, UserLogin, Token, UserResponse, 
@@ -20,9 +19,8 @@ from app.schemas import (
 
 settings = get_settings()
 
-limiter = Limiter(key_func=get_remote_address)
-
 router = APIRouter(prefix="/auth", tags=["auth"])
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
@@ -51,7 +49,7 @@ async def register(user_data: UserCreate, db: AsyncSession = Depends(get_db)):
 
 @router.post("/login", response_model=Token)
 @limiter.limit("5/minute")
-async def login(response: Response, user_data: UserLogin, db: AsyncSession = Depends(get_db)):
+async def login(request: Request, response: Response, user_data: UserLogin, db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(User).where(User.username == user_data.username))
     user = result.scalar_one_or_none()
     
@@ -93,7 +91,7 @@ async def refresh_token(
     db: AsyncSession = Depends(get_db)
 ):
     token_data = decode_token(request.refresh_token)
-    if not token_data or token_data.type != "refresh":
+    if not token_data or token_data.type != "refresh" or is_token_revoked(token_data):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid refresh token"
@@ -108,6 +106,7 @@ async def refresh_token(
             detail="User not found or inactive"
         )
     
+    revoke_token(token_data)
     access_token, refresh_token = create_token_pair(user.id, user.role)
     
     response.set_cookie(
@@ -127,7 +126,10 @@ async def refresh_token(
 
 
 @router.post("/logout")
-async def logout(response: Response):
+async def logout(response: Response, token: str = Depends(oauth2_scheme)):
+    token_data = decode_token(token)
+    if token_data:
+        revoke_token(token_data)
     response.delete_cookie(key="refresh_token")
     return {"message": "Successfully logged out"}
 

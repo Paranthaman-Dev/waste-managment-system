@@ -1,5 +1,6 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
+from uuid import uuid4
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from app.core.config import get_settings
@@ -8,6 +9,7 @@ from app.schemas import TokenPayload, UserRole
 settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+revoked_token_ids: set[str] = set()
 
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
@@ -24,7 +26,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    to_encode.update({"exp": expire, "type": "access"})
+    to_encode.update({"exp": expire, "type": "access", "jti": uuid4().hex})
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -34,7 +36,7 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
         expire = datetime.now(timezone.utc) + expires_delta
     else:
         expire = datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS)
-    to_encode.update({"exp": expire, "type": "refresh"})
+    to_encode.update({"exp": expire, "type": "refresh", "jti": uuid4().hex})
     return jwt.encode(to_encode, settings.JWT_SECRET_KEY, algorithm=settings.JWT_ALGORITHM)
 
 
@@ -44,6 +46,14 @@ def decode_token(token: str) -> Optional[TokenPayload]:
         return TokenPayload(**payload)
     except JWTError:
         return None
+
+
+def revoke_token(token_data: TokenPayload) -> None:
+    revoked_token_ids.add(token_data.jti)
+
+
+def is_token_revoked(token_data: TokenPayload) -> bool:
+    return token_data.jti in revoked_token_ids
 
 
 def create_token_pair(user_id: int, role: UserRole) -> tuple[str, str]:

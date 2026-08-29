@@ -3,8 +3,10 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from slowapi import Limiter
+from slowapi.util import get_remote_address
 
-from app.core.security import decode_token, TokenPayload
+from app.core.security import decode_token, is_token_revoked
 from app.core.config import get_settings
 from app.db.session import get_db
 from app.models import User, UserRole
@@ -12,6 +14,7 @@ from app.models import User, UserRole
 settings = get_settings()
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/login")
+limiter = Limiter(key_func=get_remote_address)
 
 
 async def get_current_user(
@@ -25,7 +28,7 @@ async def get_current_user(
     )
     
     token_data = decode_token(token)
-    if token_data is None or token_data.type != "access":
+    if token_data is None or token_data.type != "access" or is_token_revoked(token_data):
         raise credentials_exception
     
     result = await db.execute(select(User).where(User.id == token_data.sub))
@@ -45,7 +48,7 @@ async def get_current_user_optional(
         return None
     
     token_data = decode_token(token)
-    if token_data is None or token_data.type != "access":
+    if token_data is None or token_data.type != "access" or is_token_revoked(token_data):
         return None
     
     result = await db.execute(select(User).where(User.id == token_data.sub))

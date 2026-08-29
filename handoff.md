@@ -7,7 +7,7 @@ The solution must be production-quality yet runnable locally with **Podman** (Do
 
 **Mandatory stack**: FastAPI, PostgreSQL, JWT + Argon2, Podman, React/Vite/Tailwind, Leaflet/OSM.
 
-Repository: `https://github.com/Paranthaman-Dev/waste-managment-system.git` (remote `origin`, currently empty on GitHub).
+Repository: `https://github.com/Paranthaman-Dev/waste-managment-system.git` (remote `origin`; seeded through GitHub MCP commit `996e3cb4ace18572ccd4a7d494522fa4a9653a37`). Git CLI push still requires local credentials.
 
 ---
 
@@ -16,16 +16,17 @@ Repository: `https://github.com/Paranthaman-Dev/waste-managment-system.git` (rem
 - Backend scaffold in `backend/` complete: FastAPI app, config, security (JWT + Argon2), async DB session, SQLModel models, Pydantic schemas, RBAC dependencies, and routers for auth/user/collector/recycler/management.
 - **All backend Python files pass `python -m py_compile`** (verified). The syntax/import errors previously flagged in the old handoff have been resolved.
 - `POST /management/users` (create_user) is implemented and functional (imports `UserCreate`, hashes password with `get_password_hash`).
-- `.env.example` has been created at repo root (untracked, not yet committed).
+- `.env.example` exists at repo root and is now tracked in local history.
+- `CHECK.md` was created as the persistent project memory, TODO list, blockers, and verification checklist. Future sessions must read it before coding.
 - **No frontend code** exists yet (`frontend/` not created).
 - **No Alembic migrations** — tables auto-create on startup via `SQLModel.metadata.create_all`.
 - **No tests** written.
 - No CI/CD, lint, or static analysis.
 
-### Git working-tree state (at time of handoff)
-- Modified (uncommitted): `backend/app/api/management.py` (23 insertions, 3 deletions — added `UserCreate` import + implemented create_user).
-- Untracked: `.env.example`, `handoff.md`, and `__pycache__/` dirs (generated under `backend/app/**`).
-- **Not yet pushed to GitHub** — blocked on git credentials (see Errors).
+### Git working-tree state (latest update)
+- Local commit `bf30c4d "Sync initial implementation and handoff"` exists after remote seeding. It accidentally tracked Python `__pycache__` files.
+- Current working tree has staged deletions for tracked `__pycache__` files and untracked `.gitignore`, `.dockerignore`, and `CHECK.md`.
+- Remote was seeded through GitHub MCP, but normal `git push` still fails without PAT/SSH credentials.
 
 ---
 
@@ -47,7 +48,10 @@ Repository: `https://github.com/Paranthaman-Dev/waste-managment-system.git` (rem
 | `backend/Containerfile` | Podman/Docker build for backend (python:3.12-slim). | ✅ |
 | `backend/requirements.txt` | Python dependencies. | ✅ |
 | `podman-compose.yml` | postgres + backend + placeholder frontend services. | ✅ |
-| `.env.example` | Placeholder env vars (NEW — untracked). | ✅ (uncommitted) |
+| `.env.example` | Placeholder env vars. | ✅ |
+| `CHECK.md` | Persistent project memory/state tracker/TODO/verification checklist. | ✅ (untracked locally at latest update) |
+| `.gitignore` | Ignores Python cache files, virtualenvs, env files, uploads, node_modules, and frontend build output. | ✅ (untracked locally at latest update) |
+| `.dockerignore` | Excludes Python caches, virtualenvs, git metadata, env files, uploads, and node_modules from container build context. | ✅ (untracked locally at latest update) |
 
 No files deleted.
 
@@ -118,6 +122,9 @@ openpyxl==3.1.2
 | `git add .` + `git commit -m "Initial scaffold and core backend implementation"` | Commit `082d40a` (15 files, ~2238 LOC). |
 | `git remote add origin https://github.com/Paranthaman-Dev/waste-managment-system.git` | origin added. |
 | `git push -u origin master` | **FAILED** — no git CLI credentials. |
+| `github_push_files` MCP tool | Seeded remote `master` with commit `996e3cb4ace18572ccd4a7d494522fa4a9653a37`. |
+| `git commit -m "Sync initial implementation and handoff"` | Local commit `bf30c4d`; accidentally included Python `__pycache__` files. |
+| `git rm -r --cached backend/app/__pycache__ backend/app/*/__pycache__` | Staged removal of accidentally tracked Python bytecode files. |
 | `python -m py_compile $(git ls-files '*.py')` | Clean (all files compile). |
 | `podman-compose up` | **Not yet run.** |
 
@@ -125,45 +132,47 @@ openpyxl==3.1.2
 
 ## Tests Performed & Results
 - **No test files exist.** No `pytest` run has been performed.
-- `python -m py_compile` passes for all backend Python files (syntax verified).
+- `python -m py_compile` passes for all backend Python files (syntax verified again after `CHECK.md` creation).
 - **Full app import not verified** — `fastapi`/SQLModel etc. are not installed in the host Python (externally-managed Arch environment, PEP 668). Runtime import/boot validation is still pending until a venv or container is used.
 
 ---
 
 ## Current Errors / Issues
-1. **Git push blocked**: `fatal: could not read Username for 'https://github.com'`. The local git CLI has no credentials. (The GitHub MCP API user IS authenticated: `Paranthaman-Dev`, id `118628608`.) Workaround: use `github_push_files` MCP tool to seed the empty remote, or install PAT/SSH on the host.
+1. **Git CLI push blocked**: `fatal: could not read Username for 'https://github.com'`. The local git CLI has no credentials. The remote was seeded via GitHub MCP, but normal `git push` still requires PAT/SSH credentials.
 2. **Host Python cannot `pip install`** globally (PEP 668 externally-managed Arch). Dependencies are NOT installed → backend cannot be imported/run on the host. Resolution path: use a virtualenv, or rely on the Podman container (which installs from `requirements.txt`).
 3. **No frontend** — UI cannot be exercised.
 4. **No migrations** — auto-create only; future schema changes will need manual migration handling.
 5. **Frontend not created** despite handoff next-steps; repeated across sessions.
+6. **Runtime import likely broken**: `backend/app/main.py` imports `limiter` from `app.api.deps`, but `limiter` is currently defined in `app.api.auth`.
+7. **Compose currently cannot boot cleanly**: `podman-compose.yml` runs `alembic upgrade head` with no Alembic config/migrations and references `frontend/Containerfile`, which does not exist.
 
 ---
 
 ## Unfinished Work
-1. Push/seed the remote GitHub repo with current local files.
-2. Install backend deps in a venv (or via container) and validate the app actually boots (`uvicorn app.main:app`).
-3. Add Alembic setup + initial migration.
-4. Write pytest tests (auth, RBAC, bin CRUD permissions).
-5. Commit `.env.example` and `management.py` changes.
+1. Commit `.gitignore`, `.dockerignore`, `CHECK.md`, and removal of accidentally tracked `__pycache__` files.
+2. Fix runtime import issue: move/export `limiter` consistently so `app.main` imports correctly.
+3. Install backend deps in a venv (or via container) and validate the app actually boots (`uvicorn app.main:app`).
+4. Add Alembic setup + initial migration.
+5. Write pytest tests (auth, RBAC, bin CRUD permissions).
 6. Build the frontend scaffold (React + Vite + Tailwind) and implement the **User panel** first end-to-end.
 7. Configure `podman-compose.yml` to run migrations + seed admin on startup.
-8. Add `.gitignore`/`.dockerignore` (exclude `__pycache__`, uploads, node_modules).
-9. Add README + seed admin (`admin` / `admin123`, role management).
+8. Add README + seed admin (`admin` / `admin123`, role management).
 10. CI (optional).
 
 ---
 
 ## Exact Next Steps
-1. **Resolve git push** — seed remote via `github_push_files` (or configure PAT/SSH), then `git push -u origin master`.
-2. **Commit current uncommitted work**: `management.py` (create_user) and `.env.example`.
-3. **Set up a virtualenv** and install `backend/requirements.txt`; then `python -c "from app.main import app"` to confirm the app imports cleanly (catch any remaining runtime import issues).
-4. **Create Alembic migration**: `alembic init alembic`, configure `alembic.ini` + `env.py` to import models, `alembic revision --autogenerate -m "initial schema"`.
-5. **Write minimal pytest suite** in `tests/`: register + login + token issuance; RBAC protection per role; bin CRUD permissions.
-6. **Scaffold frontend**: Vite + React (TS) + Tailwind in `frontend/`; add User login page calling `/auth/login`; store access token; show basic dashboard (list bins).
-7. **Update `podman-compose.yml`** to run `alembic upgrade head` + seed before uvicorn.
-8. **Add seed script** for admin user (`admin` / `admin123`, management role) on empty users table.
-9. **Add README + `.gitignore`/`.dockerignore`**.
-10. Commit and push incrementally.
+1. **Commit repository hygiene/memory updates**: `.gitignore`, `.dockerignore`, `CHECK.md`, and staged `__pycache__` removals.
+2. **Fix backend runtime import**: `app.main` must import `limiter` from the module that defines it, or `limiter` should be moved to `app.api.deps`.
+3. **Finish dependency install in virtualenv**: run `venv/bin/pip install -r backend/requirements.txt` with enough timeout; prior attempt timed out before installing packages.
+4. **Validate backend import**: `PYTHONPATH=backend UPLOAD_DIR=/tmp/waste-management-uploads venv/bin/python -c "from app.main import app; print(app.title)"`.
+5. **Create Alembic migration**: `alembic init alembic`, configure `alembic.ini` + `env.py` to import models, `alembic revision --autogenerate -m "initial schema"`.
+6. **Write minimal pytest suite** in `tests/`: register + login + token issuance; RBAC protection per role; bin CRUD permissions.
+7. **Scaffold frontend**: Vite + React (TS) + Tailwind in `frontend/`; add User login page calling `/auth/login`; store access token; show basic dashboard (list bins).
+8. **Update `podman-compose.yml`** to run `alembic upgrade head` + seed before uvicorn only after migrations exist.
+9. **Add seed script** for admin user (`admin` / `admin123`, management role) on empty users table.
+10. **Add README** documenting setup, testing, and demo credentials.
+11. Commit and push incrementally.
 
 ---
 

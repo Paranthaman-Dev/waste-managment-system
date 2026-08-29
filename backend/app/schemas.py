@@ -1,5 +1,5 @@
-"""Pydantic schemas for the minimal API.
-Only UserCreate and UserRead are needed for the current scaffold.
+"""Pydantic schemas for request/response models.
+Only ``UserCreate`` and ``UserRead`` are defined for now.
 """
 
 from pydantic import BaseModel, EmailStr

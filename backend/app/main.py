@@ -1,59 +1,29 @@
-from contextlib import asynccontextmanager
+"""FastAPI entry point.
+Sets up the application, registers routers, and provides a simple health‑check.
+"""
+
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
-from slowapi import _rate_limit_exceeded_handler
-from slowapi.errors import RateLimitExceeded
+from fastapi.responses import JSONResponse
 
-from app.core.config import get_settings
-from app.db.session import engine
-from app.models import SQLModel
-from app.api import auth, user, collector, recycler, management
-from app.api.deps import limiter
+from .db.database import engine
 
+app = FastAPI(title="Waste Management API", version="0.1.0")
 
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+# Register routers
+from .routers import auth, user, collector, recycler, management
+app.include_router(auth.router)
+app.include_router(user.router, prefix="/user", tags=["user"])
+app.include_router(collector.router, prefix="/collector", tags=["collector"])
+app.include_router(recycler.router, prefix="/recycler", tags=["recycler"])
+
+app.include_router(management.router, prefix="/management", tags=["management"])
+@app.on_event("startup")
+async def on_startup():
+    # Create tables if they don't exist (simple sync for demo purposes)
+    from sqlmodel import SQLModel
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
-    yield
-    await engine.dispose()
 
-
-settings = get_settings()
-
-app = FastAPI(
-    title="Waste Management API",
-    description="Role-based waste management platform",
-    version="1.0.0",
-    lifespan=lifespan
-)
-
-app.state.limiter = limiter
-app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-app.mount("/uploads", StaticFiles(directory=settings.UPLOAD_DIR), name="uploads")
-
-app.include_router(auth.router)
-app.include_router(user.router)
-app.include_router(collector.router)
-app.include_router(recycler.router)
-app.include_router(management.router)
-
-
-@app.get("/health")
+@app.get("/health", response_class=JSONResponse)
 async def health_check():
-    return {"status": "healthy"}
-
-
-@app.get("/")
-async def root():
-    return {"message": "Waste Management API", "version": "1.0.0"}
+    return {"status": "ok"}
