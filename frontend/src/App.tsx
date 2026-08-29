@@ -1,22 +1,33 @@
-import { LoginPage } from './pages/LoginPage';
-import { Layout } from './components/Layout';
-import { useAuth } from './context/AuthContext';
-import { UserPanel } from './pages/UserPanel';
-import { CollectorPanel } from './pages/CollectorPanel';
-import { RecyclerPanel } from './pages/RecyclerPanel';
-import { ManagementPanel } from './pages/ManagementPanel';
+import { useAuth } from './lib/auth';
+import { AuthPage } from './features/auth/AuthPage';
+import { AppShell } from './components/layout/AppShell';
+import { UserDashboard } from './features/user/UserDashboard';
+import { CollectorDashboard } from './features/collector/CollectorDashboard';
+import { RecyclerDashboard } from './features/recycler/RecyclerDashboard';
+import { ManagementDashboard } from './features/management/ManagementDashboard';
 
 export function App() {
-  const { role, user } = useAuth();
+  const { user, role, loading } = useAuth();
 
-  if (!user || !role) return <LoginPage />;
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-background grid place-items-center p-6">
+        <div className="flex flex-col items-center gap-3">
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" aria-hidden />
+          <p className="text-sm font-medium text-muted-foreground">Loading Reclaim…</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user || !role) return <AuthPage />;
 
   return (
-    <Layout>
-      {role === 'user' && <UserPanel />}
-      {role === 'collector' && <CollectorPanel />}
-      {role === 'recycler' && <RecyclerPanel />}
-      {role === 'management' && <ManagementPanel />}
-    </Layout>
+    <AppShell>
+      {role === 'user' && <UserDashboard />}
+      {role === 'collector' && <CollectorDashboard />}
+      {role === 'recycler' && <RecyclerDashboard />}
+      {role === 'management' && <ManagementDashboard />}
+    </AppShell>
   );
 }
