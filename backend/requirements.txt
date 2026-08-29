@@ -6,4 +6,8 @@ pydantic
 python-jose[cryptography]
 argon2-cffi
 slowapi
-alembic
+passlib
+aiosqlite
+python-multipart
+pytest
+pytest-asyncio

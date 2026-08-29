@@ -19,17 +19,26 @@ class User(SQLModel, table=True):
 class PickupRequest(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     user_id: int = Field(foreign_key="user.id", nullable=False)
-    status: str = Field(default="pending")  # pending, accepted, completed, cancelled
+    collector_id: Optional[int] = Field(foreign_key="user.id", default=None)
+    status: str = Field(default="pending")  # pending, accepted, en_route, collected, completed, cancelled
+    waste_type: str = Field(nullable=False)
+    quantity_kg: float = Field(nullable=False)
+    location: str = Field(nullable=False)
     created_at: datetime = Field(default_factory=datetime.utcnow)
     # Relationships
     requester: User = Relationship(back_populates="pickups")
+    collector: Optional[User] = Relationship(sa_relationship_kwargs={"primaryjoin": "PickupRequest.collector_id==User.id"})
 
 class WasteBatch(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
-    recycler_id: int = Field(foreign_key="user.id", nullable=False)
-    status: str = Field(default="pending")  # pending, processed, delivered
+    pickup_request_id: int = Field(foreign_key="pickuprequest.id", nullable=False)
+    recycler_id: Optional[int] = Field(foreign_key="user.id", default=None)
+    status: str = Field(default="available")  # available, requested, accepted, processed, delivered
+    proof_url: Optional[str] = None
     created_at: datetime = Field(default_factory=datetime.utcnow)
-    recycler: User = Relationship(back_populates="waste_batches")
+    # Relationships
+    recycler: Optional[User] = Relationship(sa_relationship_kwargs={"primaryjoin": "WasteBatch.recycler_id==User.id"})
+    pickup: PickupRequest = Relationship()
 
 class PublicBin(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
@@ -37,3 +46,6 @@ class PublicBin(SQLModel, table=True):
     latitude: float = Field(nullable=False)
     longitude: float = Field(nullable=False)
     description: Optional[str] = None
+    accepted_waste_types: List[str] = Field(default_factory=list, sa_column="accepted_waste_types", nullable=False)
+    capacity_kg: float = Field(default=0.0, nullable=False)
+

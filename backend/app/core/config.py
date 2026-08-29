@@ -2,15 +2,14 @@
 Loads environment variables from a .env file if present.
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
-from pathlib import Path
 
 class Settings(BaseSettings):
     # Core settings
-    DATABASE_URL: str = Field(..., env="DATABASE_URL")
-    JWT_SECRET_KEY: str = Field(..., env="JWT_SECRET_KEY")
+    DATABASE_URL: str = Field(...)
+    JWT_SECRET_KEY: str = Field(...)
     JWT_ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -20,9 +19,15 @@ class Settings(BaseSettings):
     # Optional upload directory
     UPLOAD_DIR: str = "uploads"
 
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+        case_sensitive=False,
+    )
 
-# Export a singleton instance that can be imported throughout the project
 settings = Settings()
+
+def get_settings() -> Settings:
+    return settings
+

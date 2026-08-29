@@ -1,3 +1,5 @@
+import pytest
+
 from app.api.deps import require_roles
 from app.models import User, UserRole
 
@@ -15,12 +17,14 @@ async def _call_role_checker(allowed_roles, role):
     return await checker(user)
 
 
+@pytest.mark.asyncio
 async def test_require_roles_allows_matching_role():
     user = await _call_role_checker([UserRole.MANAGEMENT], UserRole.MANAGEMENT)
 
     assert user.role == UserRole.MANAGEMENT
 
 
+@pytest.mark.asyncio
 async def test_require_roles_rejects_non_matching_role():
     checker = require_roles([UserRole.MANAGEMENT])
     user = User(

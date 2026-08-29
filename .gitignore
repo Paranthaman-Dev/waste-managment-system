@@ -26,6 +26,9 @@ ENV/
 
 # Environment variables
 .env
+.env.bak
+.env.*
+!.env.example
 
 # Uploads
 backend/uploads/
@@ -40,3 +43,28 @@ node_modules/
 dist/
 .vite/
 *.log
+frontend/dist/
+frontend/node_modules/
+
+# Testing & DB
+*.db
+*.sqlite
+*.sqlite3
+test.db
+.pytest_cache/
+.coverage
+htmlcov/
+*.backup
+*.bak
+
+# Opencode / local tooling
+.opencode/
+.claude/
+.codex/
+.muse/
+
+# Misc
+.DS_Store
+Thumbs.db
+uploads/proofs/
+uploads/reports/

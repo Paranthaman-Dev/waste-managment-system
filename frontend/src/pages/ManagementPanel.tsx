@@ -4,6 +4,7 @@ import { buttonClass, Card, Field, inputClass } from '../components/Layout';
 import { useAuth } from '../context/AuthContext';
 import { apiRequest } from '../services/api';
 import type { PaginatedResponse, PublicBin, Role, User } from '../types/api';
+import { StatsCard } from '../components/StatsCard'; // New reusable stats card
 
 type DashboardSummary = {
   users: Record<string, number>;
@@ -103,10 +104,11 @@ export function ManagementPanel() {
     <div className="grid gap-6">
       {message && <p className="rounded-2xl bg-moss px-4 py-3 font-semibold text-earth">{message}</p>}
       <div className="grid gap-4 md:grid-cols-4">
-        <Metric label="Users" value={summary ? Object.values(summary.users).reduce((a, b) => a + b, 0) : 0} />
-        <Metric label="Pending pickups" value={summary?.pickup_pipeline.pending ?? 0} />
-        <Metric label="Waste kg" value={summary?.total_waste_kg ?? 0} />
-        <Metric label="Bins" value={summary?.public_bins ?? 0} />
+        {/* Updated stats using the new StatsCard component */}
+        <StatsCard title="Users" value={summary ? Object.values(summary.users).reduce((a, b) => a + b, 0) : 0} />
+        <StatsCard title="Pending pickups" value={summary?.pickup_pipeline.pending ?? 0} />
+        <StatsCard title="Waste kg" value={summary?.total_waste_kg ?? 0} />
+        <StatsCard title="Bins" value={summary?.public_bins ?? 0} />
       </div>
       <div className="grid gap-6 lg:grid-cols-[1fr_1.3fr]">
         <Card title={selectedBin ? 'Edit Public Bin' : 'Create Public Bin'}>
@@ -125,7 +127,9 @@ export function ManagementPanel() {
             </div>
           </form>
           <div className="mt-5 grid gap-2">
-            {bins.map((bin) => <button key={bin.id} className="rounded-xl bg-moss px-3 py-2 text-left font-semibold text-earth" onClick={() => chooseBin(bin)}>{bin.name}</button>)}
+            {bins.map((bin) => (
+              <button key={bin.id} className="rounded-xl bg-moss px-3 py-2 text-left font-semibold text-earth" onClick={() => chooseBin(bin)}>{bin.name}</button>
+            ))}
           </div>
         </Card>
         <Card title="Map Management">
@@ -146,10 +150,16 @@ export function ManagementPanel() {
         </Card>
         <Card title="Users And Reports">
           <div className="mb-4 flex flex-wrap gap-2">
-            {['users', 'pickups', 'batches', 'bins'].map((type) => <button key={type} className={buttonClass} onClick={() => generateReport(type)}>{type} report</button>)}
+            {['users', 'pickups', 'batches', 'bins'].map((type) => (
+              <button key={type} className={buttonClass} onClick={() => generateReport(type)}>{type} report</button>
+            ))}
           </div>
           <div className="grid gap-2">
-            {users.map((user) => <p key={user.id} className="rounded-xl bg-moss px-3 py-2 text-sm font-semibold text-earth">{user.username} · {user.role} · {user.email}</p>)}
+            {users.map((user) => (
+              <p key={user.id} className="rounded-xl bg-moss px-3 py-2 text-sm font-semibold text-earth">
+                {user.username} · {user.role} · {user.email}
+              </p>
+            ))}
           </div>
         </Card>
       </div>
