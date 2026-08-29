@@ -1,23 +1,20 @@
 # Waste Management System
 
-Role-based waste management platform built as an npm workspaces monorepo: **4 role‑specific portals** (resident / collector / recycler / admin) sharing a common design-system + API package.
+Role-based waste management platform built as an npm workspaces monorepo: **unified single-port portal** (`apps/web` on `:5173`) serving all roles (resident / collector / recycler / admin) via one login panel, sharing a common design-system + API package. Previous 4-port model is preserved on branch `four-separate-login-panel-model`.
 
 ## Stack
 
 - Backend: FastAPI, SQLModel, SQLite (dev) / PostgreSQL (prod), asyncpg
-- Auth: username/password, Argon2 password hashing, JWT access and refresh tokens
-- Frontend portals: React 19, Vite, Tailwind CSS 4, Leaflet/OpenStreetMap
-- Workspaces: npm, `apps/*` (portals) + `packages/shared` (shared UI & API layer)
+- Auth: username/password, Argon2 password hashing, JWT access and refresh tokens (resident-only self-registration; other roles provisioned by admin)
+- Frontend: React 19, Vite, Tailwind CSS 4, Leaflet/OpenStreetMap — unified portal `apps/web`
+- Workspaces: npm, `apps/web` + `packages/shared` (shared UI & API layer)
 
 ## Monorepo layout
 
 ```
 waste-management/
 ├─ apps/
-│  ├─ resident/   → http://localhost:5173   (role: user)
-│  ├─ collector/  → http://localhost:5174   (role: collector)
-│  ├─ recycler/   → http://localhost:5175   (role: recycler)
-│  └─ admin/      → http://localhost:5176   (role: management)
+│  └─ web/        → http://localhost:5173   (all roles via one login panel)
 ├─ packages/shared/  @wm/shared — design tokens, UI primitives, API client, auth, map
 ├─ backend/          FastAPI app
 └─ package.json      workspace root (scripts below)
@@ -50,31 +47,28 @@ DATABASE_URL="sqlite+aiosqlite:///./test.db" JWT_SECRET_KEY=supersecretkey \
 DATABASE_URL="sqlite+aiosqlite:///./test.db" JWT_SECRET_KEY=supersecretkey \
   ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
 
-# 4. Portals (each in its own terminal)
-npm run dev -w @wm/resident     # :5173
-npm run dev -w @wm/collector    # :5174
-npm run dev -w @wm/recycler     # :5175
-npm run dev -w @wm/admin        # :5176
+# 4. Unified portal (single port for all roles)
+npm run dev -w @wm/web     # :5173 — login as any role on one panel
 ```
 
 ## Demo Credentials
 
-`./.venv/bin/python -m app.db.seed_demo` seeds one account per role:
+`./.venv/bin/python -m app.db.seed_demo` seeds one account per role (all on the **same portal** `:5173`):
 
-| Role      | Username     | Password     | Portal      |
-|-----------|--------------|--------------|-------------|
-| Resident  | `user1`      | `user123`    | :5173       |
-| Collector | `collector1` | `collector123`| :5174      |
-| Recycler  | `recycler1`  | `recycler123`| :5175       |
-| Admin     | `admin`      | `admin123`   | :5176       |
+| Role      | Username     | Password     | Portal |
+|-----------|--------------|--------------|--------|
+| Resident  | `user1`      | `user123`    | :5173  |
+| Collector | `collector1` | `collector123`| :5173 |
+| Recycler  | `recycler1`  | `recycler123`| :5173 |
+| Admin     | `admin`      | `admin123`   | :5173  |
 
-The login page of every portal shows these as one‑click demo chips.
+The single login panel shows these as one‑click demo chips. Only residents can self-register via `Create account`; collectors/recyclers/admins are provisioned by an admin under **Users → Provision Account**.
 
 ## Scripts (root `package.json`)
 
 ```bash
-npm run build              # build all 4 portals to apps/<name>/dist
-npm run dev -w @wm/<name>  # run a single portal dev server
+npm run build              # build unified portal to apps/web/dist
+npm run dev -w @wm/web     # run unified portal dev server on :5173
 npm run typecheck          # typecheck all workspaces
 ```
 

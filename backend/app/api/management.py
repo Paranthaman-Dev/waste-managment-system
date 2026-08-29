@@ -150,6 +150,20 @@ async def create_user(
     db.add(user)
     await db.commit()
     await db.refresh(user)
+    # Auto-create role-specific profile rows so new collect/recycler accounts are immediately usable
+    try:
+        if user.role == UserRole.COLLECTOR:
+            collector = Collector(user_id=user.id, service_area="Chennai", is_available=True)
+            db.add(collector)
+            await db.commit()
+        elif user.role == UserRole.RECYCLER:
+            recycler = Recycler(user_id=user.id, accepted_waste_types=["organic", "plastic", "e-waste"], capacity_kg=500)
+            db.add(recycler)
+            await db.commit()
+    except Exception:
+        # Profile creation is best-effort; user creation itself succeeded
+        await db.rollback()
+    await db.refresh(user)
     return user
 
 

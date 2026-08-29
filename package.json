@@ -8,12 +8,8 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build -w @wm/resident && npm run build -w @wm/collector && npm run build -w @wm/recycler && npm run build -w @wm/admin",
-    "dev": "npm run dev",
-    "dev:resident": "npm run dev -w @wm/resident",
-    "dev:collector": "npm run dev -w @wm/collector",
-    "dev:recycler": "npm run dev -w @wm/recycler",
-    "dev:admin": "npm run dev -w @wm/admin",
+    "build": "npm run build -w @wm/web",
+    "dev": "npm run dev -w @wm/web",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "generate:ws": "node scripts/generate-ws.mjs"
   },

@@ -2,21 +2,22 @@
 
 ## Core entrypoints
 - **Backend (FastAPI)** – `backend/app/main.py`.  Run with `uvicorn backend.app.main:app` from the root `./.venv`.
-- **Frontend portals (npm workspaces)** – 4 role‑specific Vite apps under `apps/`:
-  - `apps/resident` → :5173 (role `user`)
-  - `apps/collector` → :5174 (role `collector`)
-  - `apps/recycler` → :5175 (role `recycler`)
-  - `apps/admin` → :5176 (role `management`)
-- **shared package** – `packages/shared` (`@wm/shared`): design tokens, UI primitives, API client, auth, router, Leaflet map.
-- **Container stack** – `podman-compose.yml` defines only `postgres` and `backend` services; the four frontend portals run locally via npm workspaces (start.sh launches all of them).
+- **Frontend (unified portal)** – Single Vite app `apps/web` on `:5173` serving all roles via one login panel (`@wm/web`):
+  - Resident (`user`) → Overview / New Request / My Requests / My Rewards / Disposal Sites / Account
+  - Collector (`collector`) → Queue / My Route / Schedule / Drop-off Sites
+  - Recycler (`recycler`) → Available Batches / My Batches / Plant Analytics
+  - Admin (`management`) → Overview / Disposal Sites / Users / Rewards & Vouchers / Audit Log / Reports
+  (Role is taken from JWT; single `AuthPage` routes to the correct dashboard. Previous 4-app model is preserved on branch `four-separate-login-panel-model`.)
+- **shared package** – `packages/shared` (`@wm/shared`): design tokens, UI primitives, API client, auth, router, Leaflet map, `AuthPage` (resident-only self-registration).
+- **Container stack** – `podman-compose.yml` defines only `postgres` and `backend` services; the unified frontend runs locally via npm workspaces (`start.sh` launches it on :5173).
 
 ## Monorepo & portals
-- Install everything once at the root: `npm install` (workspaces link `apps/*` + `packages/shared`).
-- Start one portal: `npm run dev -w @wm/resident` (similarly `collector`, `recycler`, `admin`).
-- Build all portals: `npm run build`.  Typecheck: `npm run typecheck`.
-- `@wm/shared` is aliased per app via `vite.config.ts` (`find: /^@wm\/shared$/`) and via `tsconfig.base.json` path mapping for types.  Its CSS (`@wm/shared/styles.css`) and tokens are pulled through `package.json` `exports` map.
-- The API base URL defaults to `http://localhost:8000` (`VITE_API_URL` overrides it); CORS is `allow_origins=["*"]` so all four origins work with no backend change.
-- Login is JSON `POST /auth/login` `{username, password}` → `{access_token, refresh_token, role}`.  The frontend stores tokens in localStorage (`wm_access_token`, `wm_refresh_token`, `wm_role`).
+- Install everything once at the root: `npm install` (workspaces link `apps/web` + `packages/shared`).
+- Start unified portal: `npm run dev -w @wm/web` → http://localhost:5173 (all roles via one login).
+- Build portal: `npm run build`.  Typecheck: `npm run typecheck`.
+- `@wm/shared` is aliased via `vite.config.ts` (`find: /^@wm\/shared$/`) and via `tsconfig.base.json` path mapping for types.  Its CSS (`@wm/shared/styles.css`) and tokens are pulled through `package.json` `exports` map.
+- The API base URL defaults to `http://localhost:8000` (`VITE_API_URL` overrides it); CORS is `allow_origins=["*"]`.
+- Login is JSON `POST /auth/login` `{username, password}` → `{access_token, refresh_token, role}`.  Frontend stores tokens in localStorage (`wm_access_token`, `wm_refresh_token`, `wm_role`). Registration (`POST /auth/register`) is **resident-only**; collectors/recyclers/admins are provisioned by an admin via `POST /management/users`.
 
 ## Local development without containers
 1. **Create a venv** for the backend:
@@ -38,13 +39,13 @@
      ./.venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000
    ```
    *The startup hook creates all tables on first run.*
-4. **Seed demo accounts** (one per role) and start portals:
+4. **Seed demo accounts** (one per role) and start unified portal:
    ```bash
    DATABASE_URL="sqlite+aiosqlite:///./test.db" JWT_SECRET_KEY=supersecretkey PYTHONPATH="$PWD/backend:$PWD" \
      ./.venv/bin/python -m app.db.seed_demo
-   npm run dev -w @wm/resident    # :5173 (and collector/recycler/admin on their ports)
+   npm run dev -w @wm/web    # :5173 — single login for all roles
    ```
-   Demo logins: `user1/user123`, `collector1/collector123`, `recycler1/recycler123`, `admin/admin123`.
+   Demo logins: `user1/user123`, `collector1/collector123`, `recycler1/recycler123`, `admin/admin123` (all on :5173).
 
 ## Quick full‑stack start (PostgreSQL) – use the provided `start.sh`
 ```bash
@@ -56,7 +57,7 @@
   - Waits for the health‑check to succeed.
   - Exports `DATABASE_URL` pointing to the local Postgres instance.
   - Runs `uvicorn` on `http://127.0.0.1:8000`.
-  - Starts all four frontend portals (resident/collector/recycler/admin) on ports 5173–5176.
+  - Starts the **unified frontend** (`apps/web`) on http://127.0.0.1:5173.
 - **If you don’t have `podman‑compose`**, install it (`pip install podman-compose`), use Docker instead, or use SQLite mode (`./start.sh --sqlite`) which needs no containers.
 
 ## Database & migrations
@@ -114,20 +115,20 @@ git branch -r | grep -v "origin/master" | sed 's|origin/||' | xargs -n1 git push
 
 ## Reference files (high‑value sources)
 - `README.md` – overall stack, dev commands, demo credentials.
-- `package.json` – workspace scripts (`build`, `typecheck`, `dev -w @wm/<name>`).
-- `packages/shared/src/` – design tokens (`tokens.css`), UI primitives, API client, auth, router, Leaflet map `BinMap`, `AppShell`, `AuthPage`.
+- `package.json` – workspace scripts (`build`, `typecheck`, `dev -w @wm/web`).
+- `packages/shared/src/` – design tokens (`tokens.css`), UI primitives, API client, auth, router, Leaflet map `BinMap`, `AppShell`, `AuthPage` (resident-only).
 - `podman-compose.yml` – container definitions (postgres + backend only).
 - `backend/app/main.py` – FastAPI entry point and DB bootstrap.
 - `backend/requirements.txt` – exact backend deps; note the need for `pydantic[email]` and `python-multipart`.
 - `backend/app/db/seed_demo.py` – idempotent demo‑user seed for all four roles.
-- `start.sh` – the single‑command dev entry point (backend + all four portals).
+- `start.sh` – the single‑command dev entry point (backend + unified portal on :5173).
 - `backend/tests/` – shows required fixtures and DB usage.
 - `backend/alembic/` – migration source of truth.
 
 ---
 **Bottom line for an agent:**
-- Use `./start.sh` for the quickest start (venv, deps, Postgres, uvicorn, and all four portals).
-- For container‑free work, SQLite + `./.venv/bin/uvicorn backend.app.main:app` and the four `npm run dev -w` commands are all you need.
+- Use `./start.sh` for the quickest start (venv, deps, Postgres, uvicorn, and unified portal on :5173).
+- For container‑free work, SQLite + `./.venv/bin/uvicorn backend.app.main:app` and `npm run dev -w @wm/web` is all you need.
 - Never forget `python-multipart` and `pydantic[email]`; otherwise login will crash.
-- Run `npm run build` (all portals) after touching `packages/shared` — the change is shared across every app.
+- Run `npm run build` after touching `packages/shared` — the change is shared.
 - Run migrations only when you need schema changes; otherwise rely on the automatic `create_all`.

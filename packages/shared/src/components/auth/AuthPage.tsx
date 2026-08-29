@@ -10,7 +10,6 @@ export function AuthPage() {
   const [password, setPassword] = useState('admin123');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [role, setRole] = useState('user');
   const [error, setError] = useState('');
   const [info, setInfo] = useState('');
   const [loading, setLoading] = useState(false);
@@ -45,7 +44,7 @@ export function AuthPage() {
     try {
       await apiRequest('/auth/register', {
         method: 'POST',
-        body: JSON.stringify({ username, email, password, phone: phone || undefined, role }),
+        body: JSON.stringify({ username, email, password, phone: phone || undefined }),
       });
       setInfo('Account created. Sign in now.');
       setMode('login');
@@ -180,14 +179,7 @@ export function AuthPage() {
                       <Input id="r-phone" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+91…" />
                     </div>
                   </div>
-                  <div className="grid gap-1.5">
-                    <Label htmlFor="r-role">Role</Label>
-                    <select id="r-role" value={role} onChange={(e) => setRole(e.target.value)} className="flex h-11 w-full rounded-xl border border-stone bg-white px-3 text-sm font-medium">
-                      <option value="user">Resident</option>
-                      <option value="collector">Collector</option>
-                      <option value="recycler">Recycler</option>
-                    </select>
-                  </div>
+                  <p className="mono text-[11px] tracking-widest text-sage bg-paper rounded-xl border border-stone px-3 py-2">Only Resident accounts can be created here. Collectors, Recyclers and Admins are provisioned by an admin.</p>
                   <Button type="submit" loading={loading} className="w-full bg-safety hover:bg-[#E64400] text-white">
                     Create account →
                   </Button>
