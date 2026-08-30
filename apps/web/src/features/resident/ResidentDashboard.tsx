@@ -30,6 +30,7 @@ import {
   Truck,
   Leaf,
   MapPin,
+  MapPinned,
   Sparkles,
   Calendar,
   Clock,
@@ -73,6 +74,8 @@ export function ResidentDashboard() {
   const [wasteType, setWasteType] = useState('organic');
   const [quantity, setQuantity] = useState(10);
   const [location, setLocation] = useState('Chennai Central');
+  const [pickupLat, setPickupLat] = useState<number | null>(13.0827);
+  const [pickupLng, setPickupLng] = useState<number | null>(80.2707);
   const [preferredTime, setPreferredTime] = useState('');
   const [formError, setFormError] = useState('');
 
@@ -123,6 +126,7 @@ export function ResidentDashboard() {
     setFormError('');
     if (quantity <= 0) return setFormError('Quantity must be greater than 0 kg');
     if (!location.trim()) return setFormError('Location is required');
+    if (pickupLat == null || pickupLng == null) return setFormError('Pick a location on map');
 
     setSubmitting(true);
     try {
@@ -134,6 +138,8 @@ export function ResidentDashboard() {
             waste_type: wasteType,
             quantity_kg: quantity,
             location: location.trim(),
+            latitude: pickupLat,
+            longitude: pickupLng,
             preferred_time: preferredTime || undefined,
           }),
         },
@@ -169,10 +175,34 @@ export function ResidentDashboard() {
   const handleUseMyLocation = () => {
     if (!navigator.geolocation) return;
     navigator.geolocation.getCurrentPosition((pos) => {
-      setLocation(`${pos.coords.latitude.toFixed(4)}, ${pos.coords.longitude.toFixed(4)}`);
+      const lat = Number(pos.coords.latitude.toFixed(6));
+      const lng = Number(pos.coords.longitude.toFixed(6));
+      setPickupLat(lat);
+      setPickupLng(lng);
+      setLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
       success('Location applied', 'Current device coordinates added.');
     });
   };
+
+  // Try to prime lat/lng from device on mount (optional, non-blocking)
+  useEffect(() => {
+    if (!navigator.geolocation) return;
+    navigator.geolocation.getCurrentPosition(
+      (pos) => {
+        const lat = Number(pos.coords.latitude.toFixed(6));
+        const lng = Number(pos.coords.longitude.toFixed(6));
+        setPickupLat(lat);
+        setPickupLng(lng);
+        // only overwrite default placeholder; keep user-typed address if already a lat,lng
+        setLocation((prev) => {
+          if (prev === 'Chennai Central') return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
+          return prev;
+        });
+      },
+      () => {},
+      { enableHighAccuracy: true, timeout: 8000 },
+    );
+  }, []);
 
   const totalPages = Math.ceil(total / 15) || 1;
 
@@ -336,7 +366,7 @@ export function ResidentDashboard() {
       )}
 
       {activeTab === 'new' && (
-        <Card className="max-w-2xl animate-fade-in">
+        <Card className="max-w-5xl animate-fade-in wm-card p-5">
           <CardHeader>
             <div>
               <CardTitle className="flex items-center gap-2">
@@ -348,98 +378,147 @@ export function ResidentDashboard() {
           </CardHeader>
 
           <form onSubmit={submitPickup} noValidate className="space-y-3.5">
-            <div className="space-y-1">
-              <Label>Material</Label>
-              <div className="grid grid-cols-3 gap-1.5">
-                {wasteTypeOptions.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    onClick={() => setWasteType(type)}
-                    className={`rounded-lg border p-2 text-xs font-semibold capitalize transition-all text-center ${
-                      wasteType === type
-                        ? 'border-primary bg-primary text-white'
-                        : 'border-border bg-surface text-muted-foreground hover:bg-surface-muted'
-                    }`}
-                  >
-                    {type}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <div className="grid gap-6 lg:grid-cols-[1.15fr_0.85fr] items-start">
+              {/* Left: form fields */}
+              <div className="space-y-3.5 min-w-0">
+                <div className="space-y-1">
+                  <Label>Material</Label>
+                  <div className="grid grid-cols-3 gap-1.5">
+                    {wasteTypeOptions.map((type) => (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setWasteType(type)}
+                        className={`rounded-lg border p-2 text-xs font-semibold capitalize transition-all text-center ${
+                          wasteType === type
+                            ? 'border-primary bg-primary text-white'
+                            : 'border-border bg-surface text-muted-foreground hover:bg-surface-muted'
+                        }`}
+                      >
+                        {type}
+                      </button>
+                    ))}
+                  </div>
+                </div>
 
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="quantity">Estimated Weight</Label>
-                <span className="text-xs font-bold text-primary">{quantity} kg</span>
-              </div>
-              <div className="flex gap-1.5">
-                {[5, 10, 25, 50].map((preset) => (
-                  <button
-                    key={preset}
-                    type="button"
-                    onClick={() => setQuantity(preset)}
-                    className={`flex-1 rounded-lg border py-1 text-xs font-semibold transition-all ${
-                      quantity === preset
-                        ? 'border-primary bg-primary text-white'
-                        : 'border-border bg-surface-muted text-muted-foreground hover:text-foreground'
-                    }`}
-                  >
-                    {preset}kg
-                  </button>
-                ))}
-              </div>
-              <Input
-                id="quantity"
-                type="number"
-                min="0.5"
-                step="0.5"
-                value={quantity}
-                onChange={(e) => setQuantity(Number(e.target.value))}
-                className="mt-1"
-              />
-            </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="quantity">Estimated Weight</Label>
+                    <span className="text-xs font-bold text-primary">{quantity} kg</span>
+                  </div>
+                  <div className="flex gap-1.5">
+                    {[5, 10, 25, 50].map((preset) => (
+                      <button
+                        key={preset}
+                        type="button"
+                        onClick={() => setQuantity(preset)}
+                        className={`flex-1 rounded-lg border py-1 text-xs font-semibold transition-all ${
+                          quantity === preset
+                            ? 'border-primary bg-primary text-white'
+                            : 'border-border bg-surface-muted text-muted-foreground hover:text-foreground'
+                        }`}
+                      >
+                        {preset}kg
+                      </button>
+                    ))}
+                  </div>
+                  <Input
+                    id="quantity"
+                    type="number"
+                    min="0.5"
+                    step="0.5"
+                    value={quantity}
+                    onChange={(e) => setQuantity(Number(e.target.value))}
+                    className="mt-1"
+                  />
+                </div>
 
-            <div className="space-y-1">
-              <div className="flex items-center justify-between">
-                <Label htmlFor="location">Pickup Address</Label>
-                <button
-                  type="button"
-                  onClick={handleUseMyLocation}
-                  className="inline-flex items-center text-[11px] font-semibold text-primary hover:underline"
-                >
-                  <Navigation className="h-3 w-3 mr-1" /> Use my location
-                </button>
-              </div>
-              <Input
-                id="location"
-                value={location}
-                onChange={(e) => setLocation(e.target.value)}
-                placeholder="Search by address…"
-                leftIcon={<MapPin className="h-3.5 w-3.5" />}
-                required
-              />
-            </div>
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between">
+                    <Label htmlFor="location">Pickup Address</Label>
+                    <button
+                      type="button"
+                      onClick={handleUseMyLocation}
+                      className="inline-flex items-center text-[11px] font-semibold text-primary hover:underline"
+                    >
+                      <Navigation className="h-3 w-3 mr-1" /> Use my location
+                    </button>
+                  </div>
+                  <Input
+                    id="location"
+                    value={location}
+                    onChange={(e) => {
+                      const v = e.target.value;
+                      setLocation(v);
+                      const m = v.match(/^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$/);
+                      if (m) {
+                        const lat = Number(m[1]);
+                        const lng = Number(m[2]);
+                        if (Number.isFinite(lat) && Number.isFinite(lng) && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180) {
+                          setPickupLat(Number(lat.toFixed(6)));
+                          setPickupLng(Number(lng.toFixed(6)));
+                        }
+                      }
+                    }}
+                    placeholder="Search by address…"
+                    leftIcon={<MapPin className="h-3.5 w-3.5" />}
+                    required
+                  />
+                  <div className="flex flex-wrap items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <MapPin className="h-3 w-3 shrink-0" />
+                    {pickupLat != null && pickupLng != null ? (
+                      <span className="font-mono font-semibold text-foreground">
+                        {pickupLat.toFixed(6)}, {pickupLng.toFixed(6)}
+                      </span>
+                    ) : (
+                      <span>Tap map to pick location</span>
+                    )}
+                  </div>
+                </div>
 
-            <div className="space-y-1">
-              <Label htmlFor="time">Preferred Time (Optional)</Label>
-              <Input
-                id="time"
-                type="datetime-local"
-                value={preferredTime}
-                onChange={(e) => setPreferredTime(e.target.value)}
-                leftIcon={<Calendar className="h-3.5 w-3.5" />}
-              />
-            </div>
+                <div className="space-y-1">
+                  <Label htmlFor="time">Preferred Time (Optional)</Label>
+                  <Input
+                    id="time"
+                    type="datetime-local"
+                    value={preferredTime}
+                    onChange={(e) => setPreferredTime(e.target.value)}
+                    leftIcon={<Calendar className="h-3.5 w-3.5" />}
+                  />
+                </div>
 
-            <div className="rounded-[12px] border border-emerald-500/20 bg-emerald-50/40 p-2.5 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5">
-                <Sparkles className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
-                <span className="text-emerald-900 text-[11px]">
-                  ~{estimatedCO2} kg CO₂ saved • {estimatedTrees} trees equivalent
-                </span>
+                <div className="rounded-[12px] border border-emerald-500/20 bg-emerald-50/40 p-2.5 flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-emerald-600 shrink-0" />
+                    <span className="text-emerald-900 text-[11px]">
+                      ~{estimatedCO2} kg CO₂ saved • {estimatedTrees} trees equivalent
+                    </span>
+                  </div>
+                  <Badge tone="sage">Eco Impact</Badge>
+                </div>
               </div>
-              <Badge tone="sage">Eco Impact</Badge>
+
+              {/* Right: map */}
+              <div className="lg:sticky lg:top-6 space-y-2 min-w-0">
+                <Label>Pin on map</Label>
+                <div className="relative rounded-[12px] overflow-hidden border border-border shadow-soft">
+                  <BinMap
+                    bins={bins}
+                    editable={false}
+                    onPick={(lat, lng) => {
+                      setPickupLat(lat);
+                      setPickupLng(lng);
+                      setLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                    }}
+                    height={420}
+                    selectedBinId={null}
+                  />
+                  <div className="pointer-events-none absolute left-1/2 top-1/2 z-[401] -translate-x-1/2 -translate-y-1/2">
+                    <MapPinned className="h-8 w-8 text-safety fill-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.3)]" />
+                  </div>
+                </div>
+                <p className="text-[11px] text-muted-foreground">Drag map • Tap to drop pin • Use Locate me for GPS</p>
+              </div>
             </div>
 
             {formError && <Alert variant="error">{formError}</Alert>}

@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import {
-  BinMap,
+  RouteMap,
   Button,
   Card,
   CardHeader,
@@ -31,7 +31,6 @@ import {
   Clock,
   ArrowRight,
   Check,
-  Search,
 } from 'lucide-react';
 
 export function CollectorDashboard() {
@@ -42,7 +41,6 @@ export function CollectorDashboard() {
   const getTabFromPath = () => {
     if (pathname.includes('/route')) return 'assigned';
     if (pathname.includes('/schedule')) return 'schedule';
-    if (pathname.includes('/sites')) return 'bins';
     return 'queue';
   };
 
@@ -53,7 +51,6 @@ export function CollectorDashboard() {
   const [collector, setCollector] = useState<Collector | null>(null);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
-  const [filter, setFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState<number | null>(null);
   const [schedule, setSchedule] = useState<PickupRequest[]>([]);
@@ -66,6 +63,10 @@ export function CollectorDashboard() {
   const [loadingSchedule, setLoadingSchedule] = useState(false);
 
   useEffect(() => {
+    if (pathname.includes('/sites')) {
+      navigate('/route');
+      return;
+    }
     setTab(getTabFromPath());
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pathname]);
@@ -73,7 +74,7 @@ export function CollectorDashboard() {
   async function loadData() {
     setLoading(true);
     try {
-      const binPath = filter ? `/collector/bins?waste_type=${encodeURIComponent(filter)}` : '/collector/bins';
+      const binPath = '/collector/bins';
       const [assignedData, availableData, binData, col] = await Promise.all([
         apiRequest<PaginatedResponse<PickupRequest>>(`/collector/pickups?page=${page}&page_size=15`, {}, token),
         apiRequest<PickupRequest[]>('/collector/pickups/available', {}, token).catch(() => [] as PickupRequest[]),
@@ -96,7 +97,7 @@ export function CollectorDashboard() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page, filter]);
+  }, [page]);
 
   async function acceptPickup(id: number) {
     setActing(id);
@@ -173,13 +174,32 @@ export function CollectorDashboard() {
     { id: 'queue', label: 'Queue', href: '/queue' },
     { id: 'assigned', label: 'My Route', href: '/route' },
     { id: 'schedule', label: 'Schedule', href: '/schedule' },
-    { id: 'bins', label: 'Drop-off Sites', href: '/sites' },
   ];
 
   const setTabNav = (id: string) => {
     const t = tabs.find((x) => x.id === id);
     if (t) navigate(t.href);
   };
+
+  function parseLatLng(location: string): { lat: number; lng: number } | null {
+    if (!location || typeof location !== 'string') return null;
+    const m = location.match(/^\s*(-?\d+(\.\d+)?)\s*,\s*(-?\d+(\.\d+)?)\s*$/);
+    if (!m) return null;
+    const lat = parseFloat(m[1]);
+    const lng = parseFloat(m[3]);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+    if (lat < -90 || lat > 90 || lng < -180 || lng > 180) return null;
+    return { lat, lng };
+  }
+
+  const pickupsWithCoords = assigned
+    .map((p) => {
+      if (p.latitude != null && p.longitude != null && Number.isFinite(p.latitude) && Number.isFinite(p.longitude)) return p;
+      const parsed = parseLatLng(p.location);
+      if (parsed) return { ...p, latitude: parsed.lat, longitude: parsed.lng };
+      return p;
+    })
+    .filter((p) => p.latitude != null && p.longitude != null && Number.isFinite(p.latitude as number) && Number.isFinite(p.longitude as number));
 
   return (
     <div className="space-y-6">
@@ -241,6 +261,8 @@ export function CollectorDashboard() {
             </div>
             <Badge tone="amber">{available.length} Waiting</Badge>
           </CardHeader>
+
+          {available.length > 0 && !loading && <RouteMap bins={bins} pickups={available} height={340} />}
 
           {loading ? (
             <SkeletonGrid cards={4} />
@@ -402,6 +424,9 @@ export function CollectorDashboard() {
               </div>
 
               <Pagination page={page} totalPages={Math.ceil(total / 15) || 1} onPageChange={setPage} />
+              <div className="pt-2">
+                {assigned.length > 0 && <RouteMap bins={bins} pickups={assigned} height={380} />}
+              </div>
             </>
           )}
         </Card>
@@ -457,24 +482,6 @@ export function CollectorDashboard() {
         </Card>
       )}
 
-      {tab === 'bins' && (
-        <Card className="animate-fade-in space-y-3.5">
-          <CardHeader>
-            <div>
-              <CardTitle>Drop-off Sites</CardTitle>
-              <CardDescription>Reference map of active public bins</CardDescription>
-            </div>
-            <Input
-              value={filter}
-              onChange={(e) => setFilter(e.target.value)}
-              placeholder="Filter stream…"
-              leftIcon={<Search className="h-3 w-3" />}
-              className="h-9 text-xs max-w-xs"
-            />
-          </CardHeader>
-          <BinMap bins={bins} height={480} />
-        </Card>
-      )}
     </div>
   );
 }

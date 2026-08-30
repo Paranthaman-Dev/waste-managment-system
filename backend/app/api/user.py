@@ -52,9 +52,45 @@ async def create_pickup_request(
     current_user: User = Depends(require_user),
     db: AsyncSession = Depends(get_db)
 ):
+    # Location string fallback: parse "lat,lng" from location when explicit coords missing
+    pickup_dict = pickup_data.model_dump()
+    if pickup_dict.get("latitude") is None and pickup_dict.get("longitude") is None:
+        loc = pickup_dict.get("location") or ""
+        if "," in loc:
+            parts = loc.split(",")
+            if len(parts) == 2:
+                try:
+                    lat = float(parts[0].strip())
+                    lng = float(parts[1].strip())
+                    if -90 <= lat <= 90 and -180 <= lng <= 180:
+                        pickup_dict["latitude"] = lat
+                        pickup_dict["longitude"] = lng
+                except (ValueError, AttributeError):
+                    pass
+
+    # Resident request limit: max 5 active (pending/assigned/en_route) per user
+    existing = await db.execute(
+        select(func.count()).select_from(
+            select(PickupRequest)
+            .where(
+                PickupRequest.user_id == current_user.id,
+                PickupRequest.status.in_(
+                    [PickupStatus.PENDING, PickupStatus.ASSIGNED, PickupStatus.EN_ROUTE]
+                ),
+            )
+            .subquery()
+        )
+    )
+    count = existing.scalar() or 0
+    if count >= 5:
+        raise HTTPException(
+            status_code=429,
+            detail="Request limit reached: max 5 active pickups. Complete or cancel existing requests before creating new ones.",
+        )
+
     pickup = PickupRequest(
         user_id=current_user.id,
-        **pickup_data.model_dump()
+        **pickup_dict
     )
     db.add(pickup)
     await db.commit()

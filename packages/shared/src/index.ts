@@ -15,3 +15,4 @@ export { AuthProvider, useAuth } from './auth';
 export { RouterProvider, useRouter, Link } from './router';
 export { ToastProvider, useToast } from './toast';
 export { useQuery, invalidateQueries } from './query';
+export * from './components/map/RouteMap';

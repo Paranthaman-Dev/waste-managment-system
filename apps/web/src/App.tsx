@@ -34,7 +34,6 @@ const collectorNav: NavItem[] = [
   { id: 'queue', label: 'Queue', href: '/queue', icon: <Layers className="h-4 w-4" /> },
   { id: 'assigned', label: 'My Route', href: '/route', icon: <Truck className="h-4 w-4" /> },
   { id: 'schedule', label: 'Schedule', href: '/schedule', icon: <Calendar className="h-4 w-4" /> },
-  { id: 'bins', label: 'Drop-off Sites', href: '/sites', icon: <MapPin className="h-4 w-4" /> },
 ];
 
 const recyclerNav: NavItem[] = [
