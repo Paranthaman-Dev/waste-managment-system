@@ -43,7 +43,7 @@ The application must work end-to-end rather than consisting of disconnected APIs
 - [x] Implement recycler waste batch endpoints and proof upload endpoint.
 - [x] Implement management user/profile/bin/report/audit endpoints.
 - [x] Verify all endpoints from the original API spec exist and return expected response shapes – `/health` 200, `/auth/register` 201, `/auth/login` 200 via `curl` + `TestClient`, `/management/bins` 201, `/user/bins` 200.
-- [ ] Verify malformed requests return Pydantic 422 responses for one endpoint per role.
+- [x] Verify malformed requests return Pydantic 422 responses for one endpoint per role – `POST /user/pickups {}` → 422 missing `waste_type/quantity_kg/location`, `quantity -1` → `greater_than`, `PUT /collector/pickups/1/status {"status":"bad"}` → 422 enum, `PUT /recycler/batches/1 {"status":"bad"}` → 422, `POST /management/bins {}` → 422 missing `name/latitude/longitude` (`backend/app/api/user.py:49` `collector.py:189` `recycler.py:202` `management.py:396` live `curl` 422 on `127.0.0.1:8000` via `user1/collector1/recycler1/admin`).
 - [x] Review and remove unused imports without changing behavior – `ruff check --select F401 backend/app` clean (All checks passed), `pyflakes backend/app` only `vouchers.py:124` redefinition + `alembic/env.py:9` noqa F401, `npx tsc --noEmit` (npm run typecheck) 0 errors, `vite build` 1886 modules 499.55kB gzip 140.49kB, `python -m py_compile` ok, `pytest` 20/20 pass; removed unused imports via minimal diff in `backend/app/api/auth.py:1` `timedelta`, `backend/app/api/collector.py:5` `timedelta`, `backend/app/api/management.py:1,2,5,7,21` `UploadFile,File,delete,timedelta,io,AuditLogResponse`, `backend/app/api/recycler.py:4,5,6` `List,date,os`, `backend/app/api/vouchers.py:8` `User`, `backend/app/schemas/__init__.py:5,6,11` `date,Generic,TypeVar,reward_rate_for`, `backend/app/services/rewards.py:13` `reward_rate_for`, `apps/web/src/features/admin/ManagementDashboard.tsx:28` `LayoutDashboard`, `apps/web/src/features/admin/VouchersSection.tsx:25` `PaginatedResponse`, plus `backend/tests/test_rewards.py:20,29` `Redemption,get_or_create_balance` and `backend/tests/test_reward_hardening.py:32` `Redemption` for full `ruff --select F401 backend` clean.
 
 ### Database
@@ -86,7 +86,7 @@ The application must work end-to-end rather than consisting of disconnected APIs
 - [x] Add frontend `Containerfile` after frontend scaffold exists.
 - [x] Verify `podman-compose up -d postgres` boots from a clean clone after copying `.env.example` to `.env` – `waste-postgres` now `healthy` (podman 6.1.0, `podman-compose` pull ok); backend runs via `venv` per user instruction (not podman), only postgres uses podman.
 - [x] Remove or fix compose references to paths that do not yet exist, such as missing Alembic config/frontend container files.
-- [ ] Verify upload data persists through container restart via named volume (`upload_data`/`postgres_data` defined in `podman-compose.yml:62`).
+- [x] Verify upload data persists through container restart via named volume (`upload_data`/`postgres_data` defined in `podman-compose.yml:47-49` `upload_data:/app/uploads` `postgres_data:/var/lib/postgresql/data`) – named volume `waste-management_upload_data` `podman run` proof_test.txt persists after `podman restart waste-backend-test` + container rm, host `uploads/proofs 2 png` `uploads/reports 9 csv` md5 retained after 2× `podman restart waste-postgres` healthy.
 
 ### Testing And Quality
 - [x] Add pytest suite.
