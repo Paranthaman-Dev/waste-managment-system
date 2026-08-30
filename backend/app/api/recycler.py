@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
 from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
-from typing import List, Optional
-from datetime import datetime, timezone, date
-import os
+from typing import Optional
+from datetime import datetime, timezone
 import uuid
 from pathlib import Path
 

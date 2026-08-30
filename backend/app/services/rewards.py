@@ -10,7 +10,7 @@ from fastapi import HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.core.config import calculate_points, reward_rate_for
+from app.core.config import calculate_points
 from app.models import (
     AuditLog,
     PickupRequest,

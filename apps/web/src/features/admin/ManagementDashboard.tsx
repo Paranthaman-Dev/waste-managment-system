@@ -25,7 +25,6 @@ import {
 } from '@wm/shared';
 import type { PaginatedResponse, PublicBin, User, AuditLog, Report, DashboardSummary } from '@wm/shared';
 import {
-  LayoutDashboard,
   MapPin,
   Users,
   ShieldCheck,

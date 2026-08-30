@@ -22,7 +22,7 @@ import {
   getRedemptions,
   updateRedemptionStatus,
 } from '@wm/shared';
-import type { Voucher, RewardRedemption, PaginatedResponse } from '@wm/shared';
+import type { Voucher, RewardRedemption } from '@wm/shared';
 import { Gift, PlusCircle, Pencil, Trash2, CheckCircle2, XCircle } from 'lucide-react';
 
 const EMPTY_FORM = {

@@ -2,13 +2,12 @@
 Covers auth, user, collector, recycler, management, bins, pickups, batches.
 """
 
-from datetime import datetime, date, timezone
-from typing import Optional, List, Any, Generic, TypeVar
+from datetime import datetime, timezone
+from typing import Optional, List, Any
 
 from pydantic import BaseModel, EmailStr, ConfigDict, Field, field_validator
 
 from app.models import UserRole, PickupStatus, BatchStatus
-from app.core.config import reward_rate_for
 
 # -------------------------------------------------------------------
 # Shared

@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone, date
 
 from app.api.deps import require_collector, get_db
 from app.models import User, Collector, PickupRequest, PickupStatus, WasteBatch, BatchStatus

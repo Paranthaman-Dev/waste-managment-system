@@ -17,7 +17,6 @@ from app.models import (
     AuditLog,
     PickupRequest,
     PickupStatus,
-    Redemption,
     RewardBalance,
     RewardLedger,
     User,
@@ -26,7 +25,6 @@ from app.models import (
 )
 from app.services.rewards import (
     award_points_for_pickup,
-    get_or_create_balance,
     redeem_voucher,
     rates_payload,
 )

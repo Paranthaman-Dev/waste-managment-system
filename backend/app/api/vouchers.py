@@ -5,7 +5,7 @@ from sqlmodel import select, func
 from sqlalchemy.orm import selectinload
 
 from app.api.deps import get_db, require_management, require_user
-from app.models import Redemption, RedemptionStatus, Voucher, User
+from app.models import Redemption, RedemptionStatus, Voucher
 from app.schemas import (
     RedemptionResponse,
     VoucherCreate,

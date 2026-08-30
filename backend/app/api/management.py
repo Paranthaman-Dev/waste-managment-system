@@ -1,10 +1,9 @@
-from fastapi import APIRouter, Depends, HTTPException, status, Query, UploadFile, File
-from sqlmodel import select, func, delete
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+from sqlmodel import select, func
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
-from datetime import datetime, timezone, date, timedelta
+from datetime import datetime, timezone, date
 import csv
-import io
 from pathlib import Path
 import uuid
 
@@ -18,7 +17,7 @@ from app.models import (
 from app.schemas import (
     UserCreate, UserResponse, UserUpdate, CollectorResponse, CollectorUpdate,
     RecyclerResponse, RecyclerUpdate, PublicBinCreate, PublicBinResponse,
-    PublicBinUpdate, AuditLogResponse, ReportResponse, PaginatedResponse
+    PublicBinUpdate, ReportResponse, PaginatedResponse
 )
 from app.core.security import get_password_hash
 

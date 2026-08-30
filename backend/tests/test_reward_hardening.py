@@ -29,7 +29,7 @@ from fastapi import HTTPException
 from app.core.config import calculate_points
 from app.models import (
     PickupRequest, PickupStatus, RewardBalance, User, UserRole, Voucher,
-    Redemption, RedemptionStatus,
+    RedemptionStatus,
 )
 from app.schemas import VoucherCreate, PickupRequestCreate
 from app.services.rewards import award_points_for_pickup, redeem_voucher
