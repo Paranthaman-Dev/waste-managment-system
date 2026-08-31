@@ -1,32 +1,11 @@
-version: '3.8'
-
 services:
-  postgres:
-    image: docker.io/library/postgres:16-alpine
-    container_name: waste-postgres
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-waste_management}
-      POSTGRES_USER: ${POSTGRES_USER:-waste_user}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-waste_pass}
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-      - ./backend/init-db:/docker-entrypoint-initdb.d
-    ports:
-      - "5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER:-waste_user} -d $${POSTGRES_DB:-waste_management}"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-
   backend:
     build:
       context: ./backend
       dockerfile: Containerfile
     container_name: waste-backend
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-waste_user}:${POSTGRES_PASSWORD:-waste_pass}@postgres:5432/${POSTGRES_DB:-waste_management}
+      DATABASE_URL: ${DATABASE_URL:-sqlite+aiosqlite:////app/data/waste.db}
       JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-in-production}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
@@ -36,14 +15,27 @@ services:
     volumes:
       - ./backend:/app
       - upload_data:/app/uploads
+      - sqlite_data:/app/data
     ports:
       - "8000:8000"
-    depends_on:
-      postgres:
-        condition: service_healthy
+    expose:
+      - "8000"
     command: >
-      sh -c "alembic -c alembic.ini upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "mkdir -p /app/data && python -m alembic -c alembic.ini upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  caddy:
+    image: docker.io/library/caddy:2-alpine
+    container_name: waste-caddy
+    ports:
+      - "8080:80"
+      - "8443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - backend
 
 volumes:
-  postgres_data:
+  sqlite_data:
   upload_data:

@@ -32,7 +32,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$PROJECT_ROOT"
 
 # ---------- args ----------
-MODE="postgres"   # postgres | sqlite
+MODE="sqlite"   # sqlite | postgres (podman now sqlite-only)
 RUN_FRONTEND=1
 RUN_BACKEND=1
 ONLY_POSTGRES=0
@@ -192,8 +192,8 @@ mkdir -p "${UPLOAD_DIR}/proofs" "${UPLOAD_DIR}/reports" 2>/dev/null || true
 mkdir -p uploads  # legacy path used by some code/tests
 ok "Upload dirs ready: $UPLOAD_DIR"
 
-# ---------- 4. postgres via podman (only required container) ----------
-if [[ "$MODE" == "postgres" ]]; then
+# ---------- 4. postgres via podman (only required container) — now sqlite-only, postgres kept for --postgres manual  ----------
+if [[ "$MODE" == "postgres" ]] && grep -q "postgres:" podman-compose.yml; then
   if [[ -z "$COMPOSE" ]]; then
     echo "ERROR: podman-compose (or docker compose) not found but --postgres mode requires it." >&2
     echo "Install podman-compose (pip install podman-compose) or use --sqlite" >&2
@@ -241,6 +241,16 @@ if [[ "$MODE" == "postgres" ]]; then
   fi
 fi
 
+# for sqlite mode, ensure migrations + seed (no postgres)
+if [[ "$MODE" == "sqlite" ]]; then
+  info "Running Alembic migrations (sqlite)..."
+  (cd backend && DATABASE_URL="$DATABASE_URL" JWT_SECRET_KEY="$JWT_SECRET_KEY" ../.venv/bin/alembic -c alembic.ini upgrade head) || warn "Alembic sqlite failed"
+  ok "Migrations applied (sqlite)"
+  info "Seeding admin (admin / admin123) if needed..."
+  DATABASE_URL="$DATABASE_URL" JWT_SECRET_KEY="$JWT_SECRET_KEY" PYTHONPATH="$PROJECT_ROOT/backend:$PROJECT_ROOT" "$PROJECT_ROOT/.venv/bin/python" -m app.db.seed || true
+  ok "Seed done (sqlite)"
+fi
+
 # ---------- 5. backend via venv ----------
 if [[ $RUN_BACKEND -eq 1 ]]; then
   info "Starting backend (venv) on http://127.0.0.1:8000 ..."
@@ -251,7 +261,7 @@ if [[ $RUN_BACKEND -eq 1 ]]; then
   # start uvicorn in background
   DATABASE_URL="$DATABASE_URL" JWT_SECRET_KEY="$JWT_SECRET_KEY" JWT_ALGORITHM="$JWT_ALGORITHM" \
     UPLOAD_DIR="$UPLOAD_DIR" PYTHONPATH="$PROJECT_ROOT/backend:$PROJECT_ROOT" \
-    .venv/bin/uvicorn backend.app.main:app --host 127.0.0.1 --port 8000 --reload \
+    .venv/bin/uvicorn backend.app.main:app --host 0.0.0.0 --port 8000 --reload \
     > /tmp/waste-backend.log 2>&1 &
   BACKEND_PID=$!
   echo "$BACKEND_PID" > /tmp/waste-backend.pid
@@ -287,7 +297,8 @@ if [[ $RUN_FRONTEND -eq 1 ]]; then
       if command -v lsof >/dev/null 2>&1; then
         lsof -ti:$port | xargs kill -9 2>/dev/null || true
       fi
-      (cd "$PROJECT_ROOT" && VITE_API_URL=http://localhost:8000 npm run dev -w "@wm/web" -- --port "$port" --host > "/tmp/waste-$name.log" 2>&1) &
+      # VITE_API_URL="" enables same-origin proxy mode (vite proxies /auth etc to backend); for ngrok: VITE_API_URL=https://xxx.ngrok-free.app ./start.sh
+      (cd "$PROJECT_ROOT" && VITE_API_URL="${VITE_API_URL:-}" npm run dev -w "@wm/web" -- --port "$port" --host > "/tmp/waste-$name.log" 2>&1) &
       echo "$!" > "/tmp/waste-$name.pid"
       for i in {1..25}; do
         if curl -sf "http://127.0.0.1:$port" >/dev/null 2>&1; then

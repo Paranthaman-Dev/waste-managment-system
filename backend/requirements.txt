@@ -3,11 +3,14 @@ uvicorn[standard]
 sqlmodel
 asyncpg
 pydantic
+pydantic-settings
+pydantic[email]
 python-jose[cryptography]
 argon2-cffi
 slowapi
 passlib
 aiosqlite
 python-multipart
+alembic
 pytest
 pytest-asyncio

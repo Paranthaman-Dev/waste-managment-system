@@ -1,6 +1,39 @@
 import type { TokenResponse } from './types/api';
 
-export const API_URL: string = (import.meta as any).env?.VITE_API_URL ?? 'http://localhost:8000';
+function resolveApiUrl(): string {
+  try {
+    const w = typeof window !== 'undefined' ? (window as any) : null;
+    if (w) {
+      // ?api= query param takes precedence (e.g. https://frontend.ngrok-free.app?api=https://backend.ngrok-free.app)
+      try {
+        const sp = new URLSearchParams(w.location?.search || '');
+        const qp = sp.get('api') || sp.get('api_url');
+        if (qp) {
+          w.__VITE_API_URL = qp;
+          try { w.localStorage?.setItem('VITE_API_URL', qp); } catch {}
+          return qp;
+        }
+      } catch {}
+      if (typeof w.__VITE_API_URL === 'string' && w.__VITE_API_URL) return w.__VITE_API_URL;
+      if (w.localStorage) {
+        const ls = w.localStorage.getItem('VITE_API_URL');
+        if (ls) return ls;
+      }
+      // allow runtime injection via window.__ENV__
+      if (w.__ENV__?.VITE_API_URL) return w.__ENV__.VITE_API_URL;
+    }
+  } catch {}
+  return (import.meta as any).env?.VITE_API_URL ?? '';
+}
+export const API_URL: string = resolveApiUrl();
+export function setApiUrl(url: string) {
+  try {
+    if (typeof window !== 'undefined') {
+      (window as any).__VITE_API_URL = url;
+      window.localStorage?.setItem('VITE_API_URL', url);
+    }
+  } catch {}
+}
 
 export class ApiError extends Error {
   status: number;
@@ -11,7 +44,8 @@ export class ApiError extends Error {
 }
 
 export function getApiUrl() {
-  return API_URL;
+  // dynamic so setApiUrl / ?api= / localStorage take effect without reload
+  return resolveApiUrl();
 }
 
 export async function apiRequest<T>(
@@ -23,8 +57,13 @@ export async function apiRequest<T>(
   const isForm = options.body instanceof FormData;
   if (!isForm && !headers.has('Content-Type')) headers.set('Content-Type', 'application/json');
   if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (headers.has('Authorization')) {
+    headers.set('ngrok-skip-browser-warning', 'true');
+    headers.set('X-Requested-With', 'XMLHttpRequest');
+  }
 
-  const res = await fetch(`${API_URL}${path}`, { ...options, headers, credentials: 'include' });
+  const url = `${resolveApiUrl()}${path}`;
+  const res = await fetch(url, { ...options, headers, credentials: 'include' });
 
   if (!res.ok) {
     let message = res.statusText;
