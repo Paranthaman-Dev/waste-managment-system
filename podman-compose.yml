@@ -23,6 +23,16 @@ services:
     command: >
       sh -c "mkdir -p /app/data && python -m alembic -c alembic.ini upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: waste-frontend
+    depends_on:
+      - backend
+    expose:
+      - "80"
+
   caddy:
     image: docker.io/library/caddy:2-alpine
     container_name: waste-caddy
@@ -35,6 +45,7 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - backend
+      - frontend
 
 volumes:
   sqlite_data:

@@ -24,9 +24,11 @@ async def list_active_vouchers(
     db: AsyncSession = Depends(get_db),
 ):
     from datetime import datetime, timezone
+    # Use naive UTC to match sqlite storage (stored as naive after replace(tzinfo=None) in model)
+    now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
     query = select(Voucher).where(
         Voucher.active.is_(True),
-        (Voucher.valid_until.is_(None)) | (Voucher.valid_until > datetime.now(timezone.utc)),
+        (Voucher.valid_until.is_(None)) | (Voucher.valid_until > now_naive),
     ).order_by(Voucher.cost_points.asc())
     result = await db.execute(query)
     return result.scalars().all()
@@ -114,6 +116,37 @@ async def update_redemption_status(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Redemption already cancelled")
     if new_status == RedemptionStatus.PENDING:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="PENDING is the initial status")
+    # Refund points on cancellation so user balance is restored (idempotent, guarded above)
+    if new_status == RedemptionStatus.CANCELLED:
+        from app.models import RewardBalance
+        from datetime import datetime, timezone
+        bal_result = await db.execute(
+            select(RewardBalance).where(RewardBalance.user_id == redemption.user_id).with_for_update()
+        )
+        bal = bal_result.scalar_one_or_none()
+        if bal is None:
+            bal = RewardBalance(user_id=redemption.user_id, balance=0, lifetime_earned=0)
+            db.add(bal)
+            await db.flush()
+        bal.balance += int(redemption.points_spent)
+        # audit trail for refund
+        from app.models import AuditLog
+        audit = AuditLog(
+            actor_user_id=current_user.id,
+            action="rewards.refunded",
+            entity_type="redemption",
+            entity_id=redemption.id,
+        )
+        db.add(audit)
+    elif new_status == RedemptionStatus.ISSUED:
+        from app.models import AuditLog
+        audit = AuditLog(
+            actor_user_id=current_user.id,
+            action="rewards.issued",
+            entity_type="redemption",
+            entity_id=redemption.id,
+        )
+        db.add(audit)
     redemption.status = new_status
     await db.commit()
     await db.refresh(redemption)
@@ -141,13 +174,18 @@ async def create_voucher(
     current_user=Depends(require_management),
     db: AsyncSession = Depends(get_db),
 ):
+    from datetime import timezone
+    # Normalize valid_until to naive UTC for consistent sqlite storage and comparison
+    vu = payload.valid_until
+    if vu is not None and vu.tzinfo is not None:
+        vu = vu.astimezone(timezone.utc).replace(tzinfo=None)
     voucher = Voucher(
         title=payload.title,
         description=payload.description,
         cost_points=payload.cost_points,
         active=payload.active,
         created_by=current_user.id,
-        valid_until=payload.valid_until,
+        valid_until=vu,
     )
     db.add(voucher)
     await db.commit()
@@ -162,11 +200,17 @@ async def update_voucher(
     current_user=Depends(require_management),
     db: AsyncSession = Depends(get_db),
 ):
+    from datetime import timezone
     result = await db.execute(select(Voucher).where(Voucher.id == voucher_id))
     voucher = result.scalar_one_or_none()
     if not voucher:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Voucher not found")
     data = payload.model_dump(exclude_unset=True)
+    # Normalize valid_until to naive UTC if present
+    if "valid_until" in data and data["valid_until"] is not None:
+        vu = data["valid_until"]
+        if hasattr(vu, "tzinfo") and vu.tzinfo is not None:
+            data["valid_until"] = vu.astimezone(timezone.utc).replace(tzinfo=None)
     for k, v in data.items():
         setattr(voucher, k, v)
     await db.commit()

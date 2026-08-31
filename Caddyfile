@@ -1,27 +1,27 @@
 # Caddy on :80 merges frontend 5173 and backend 8000 to single port for DDNS/IPv6/ngrok http 80.
 :80 {
-  handle /auth/* {
+  handle /auth* {
     reverse_proxy backend:8000
   }
-  handle /user/* {
+  handle /user* {
     reverse_proxy backend:8000
   }
-  handle /collector/* {
+  handle /collector* {
     reverse_proxy backend:8000
   }
-  handle /recycler/* {
+  handle /recycler* {
     reverse_proxy backend:8000
   }
-  handle /management/* {
+  handle /management* {
     reverse_proxy backend:8000
   }
-  handle /rewards/* {
+  handle /rewards* {
     reverse_proxy backend:8000
   }
-  handle /vouchers/* {
+  handle /vouchers* {
     reverse_proxy backend:8000
   }
-  handle /health {
+  handle /health* {
     reverse_proxy backend:8000
   }
   handle /docs* {
@@ -30,7 +30,7 @@
   handle /openapi.json {
     reverse_proxy backend:8000
   }
-  handle /uploads/* {
+  handle /uploads* {
     reverse_proxy backend:8000
   }
   handle {

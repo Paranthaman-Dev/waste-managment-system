@@ -256,7 +256,6 @@ class RewardLedgerResponse(BaseModel):
     weight_kg: float
     points: int
     created_at: datetime
-
 class VoucherCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     description: str = ""
@@ -268,9 +267,13 @@ class VoucherCreate(BaseModel):
     @field_validator("valid_until")
     @classmethod
     def validate_valid_until(cls, v: Optional[datetime]) -> Optional[datetime]:
-        if v is not None and v < datetime.now(timezone.utc).replace(tzinfo=None):
-            raise ValueError("valid_until must be in the future")
+        if v is not None:
+            # Handle both naive and aware datetimes: normalize to aware UTC for comparison
+            v_aware = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+            if v_aware < datetime.now(timezone.utc):
+                raise ValueError("valid_until must be in the future")
         return v
+
 
 class VoucherUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=120)
@@ -282,8 +285,10 @@ class VoucherUpdate(BaseModel):
     @field_validator("valid_until")
     @classmethod
     def validate_valid_until(cls, v: Optional[datetime]) -> Optional[datetime]:
-        if v is not None and v < datetime.now(timezone.utc).replace(tzinfo=None):
-            raise ValueError("valid_until must be in the future")
+        if v is not None:
+            v_aware = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+            if v_aware < datetime.now(timezone.utc):
+                raise ValueError("valid_until must be in the future")
         return v
 
 class VoucherResponse(BaseModel):
