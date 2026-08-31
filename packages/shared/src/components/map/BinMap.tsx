@@ -1,4 +1,6 @@
+import 'leaflet/dist/leaflet.css';
 import React, { useEffect, useState } from 'react';
+
 import { MapContainer, TileLayer, Marker, Popup, useMapEvents, Circle, useMap } from 'react-leaflet';
 import L from 'leaflet';
 import type { PublicBin } from '../../types/api';

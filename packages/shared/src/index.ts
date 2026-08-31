@@ -11,6 +11,7 @@ export * from './components/layout/AppShell';
 export * from './components/auth/AuthPage';
 export * from './components/rewards/RewardCard';
 export * from './components/rewards/VoucherTile';
+export * from './components/pickup/PickupCard';
 export { AuthProvider, useAuth } from './auth';
 export { RouterProvider, useRouter, Link } from './router';
 export { ToastProvider, useToast } from './toast';

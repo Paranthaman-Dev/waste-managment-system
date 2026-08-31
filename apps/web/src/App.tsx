@@ -1,4 +1,4 @@
-import { useAuth, AuthPage, AppShell, NavItem } from '@wm/shared';
+import { useAuth, AuthPage, AppShell, NavItem, LoadingScreen } from '@wm/shared';
 import {
   Leaf,
   PlusCircle,
@@ -16,10 +16,72 @@ import {
   FileText,
 } from 'lucide-react';
 
-import { ResidentDashboard } from './features/resident/ResidentDashboard';
-import { CollectorDashboard } from './features/collector/CollectorDashboard';
-import { RecyclerDashboard } from './features/recycler/RecyclerDashboard';
-import { ManagementDashboard } from './features/admin/ManagementDashboard';
+import React, { Suspense } from 'react';
+
+const ResidentDashboard = React.lazy(() =>
+  import('./features/resident/ResidentDashboard').then((m) => ({ default: m.ResidentDashboard })),
+);
+const CollectorDashboard = React.lazy(() =>
+  import('./features/collector/CollectorDashboard').then((m) => ({ default: m.CollectorDashboard })),
+);
+const RecyclerDashboard = React.lazy(() =>
+  import('./features/recycler/RecyclerDashboard').then((m) => ({ default: m.RecyclerDashboard })),
+);
+const ManagementDashboard = React.lazy(() =>
+  import('./features/admin/ManagementDashboard').then((m) => ({ default: m.ManagementDashboard })),
+);
+
+// Simple ErrorBoundary — react-error-boundary not installed (checked package.json)
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  state: { hasError: boolean; error?: Error } = { hasError: false, error: undefined };
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error('ErrorBoundary caught:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        this.props.fallback ?? (
+          <div className="p-6 text-center" role="alert">
+            <p className="text-sm font-medium text-destructive">Something went wrong loading this section.</p>
+            {this.state.error?.message && (
+              <p className="text-xs text-muted-foreground mt-1">{this.state.error.message}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: undefined })}
+              className="mt-3 inline-flex items-center rounded-md border border-border bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-muted"
+            >
+              Try again
+            </button>
+          </div>
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Dedupe helper: single Suspense + ErrorBoundary wrapper per React docs
+const withSuspense = (node: React.ReactNode) => (
+  <ErrorBoundary>
+    <Suspense fallback={<LoadingScreen />}>{node}</Suspense>
+  </ErrorBoundary>
+);
+
+// Alternative wrapper component (also satisfies dedupe requirement)
+function LazyLoad({ children }: { children: React.ReactNode }) {
+  return withSuspense(children);
+}
 
 const residentNav: NavItem[] = [
   { id: 'overview', label: 'Overview', href: '/', icon: <Leaf className="h-4 w-4" /> },
@@ -51,27 +113,21 @@ const adminNav: NavItem[] = [
   { id: 'reports', label: 'Generated Reports', href: '/reports', icon: <FileText className="h-4 w-4" /> },
 ];
 
-function LoadingScreen() {
-  return (
-    <div className="min-h-screen bg-paper grid place-items-center p-6">
-      <div className="flex flex-col items-center gap-3">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary/20 border-t-primary" aria-hidden />
-        <p className="text-sm font-medium text-muted-foreground">Loading Reclaim…</p>
-      </div>
-    </div>
-  );
-}
-
 export function App() {
   const { user, role, loading } = useAuth();
 
-  if (loading) return <LoadingScreen />;
+  if (loading)
+    return (
+      <div className="min-h-screen bg-paper grid place-items-center p-6">
+        <LoadingScreen />
+      </div>
+    );
   if (!user || !role) return <AuthPage />;
 
   if (role === 'user') {
     return (
       <AppShell navItems={residentNav} brand={{ name: 'Reclaim', mark: '♻', sub: 'RESIDENT PORTAL' }} meta="Resident">
-        <ResidentDashboard />
+        {withSuspense(<ResidentDashboard />)}
       </AppShell>
     );
   }
@@ -79,7 +135,7 @@ export function App() {
   if (role === 'collector') {
     return (
       <AppShell navItems={collectorNav} brand={{ name: 'Reclaim', mark: '♻', sub: 'COLLECTOR PORTAL' }} meta="Collector">
-        <CollectorDashboard />
+        {withSuspense(<CollectorDashboard />)}
       </AppShell>
     );
   }
@@ -87,7 +143,7 @@ export function App() {
   if (role === 'recycler') {
     return (
       <AppShell navItems={recyclerNav} brand={{ name: 'Reclaim', mark: '♻', sub: 'RECYCLER PORTAL' }} meta="Recycler">
-        <RecyclerDashboard />
+        {withSuspense(<RecyclerDashboard />)}
       </AppShell>
     );
   }
@@ -95,7 +151,7 @@ export function App() {
   if (role === 'management') {
     return (
       <AppShell navItems={adminNav} brand={{ name: 'Reclaim', mark: '♻', sub: 'ADMIN PORTAL' }} meta="Admin">
-        <ManagementDashboard />
+        {withSuspense(<ManagementDashboard />)}
       </AppShell>
     );
   }

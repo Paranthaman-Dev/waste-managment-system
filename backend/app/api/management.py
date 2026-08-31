@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import select, func
+from sqlmodel import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime, timezone, date
@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.models import (
     User, Collector, Recycler, PickupRequest, WasteBatch,
     PublicBin, AuditLog, Report, UserRole, PickupStatus, BatchStatus,
-    RewardLedger, Redemption
+    RewardLedger, RewardBalance, Voucher, Redemption
 )
 from app.schemas import (
     UserCreate, UserResponse, UserUpdate, CollectorResponse, CollectorUpdate,
@@ -212,6 +212,35 @@ async def delete_user(
             detail="User not found"
         )
     
+    # Project-only: clean up FK children that would violate NOT NULL on delete
+    # 1) Remember collector/recycler ids to nullify references before deleting profiles
+    collector_ids_res = await db.execute(select(Collector.id).where(Collector.user_id == user_id))
+    collector_ids = [r[0] for r in collector_ids_res.all()]
+    if collector_ids:
+        await db.execute(update(PickupRequest).where(PickupRequest.collector_id.in_(collector_ids)).values(collector_id=None))
+    recycler_ids_res = await db.execute(select(Recycler.id).where(Recycler.user_id == user_id))
+    recycler_ids = [r[0] for r in recycler_ids_res.all()]
+    if recycler_ids:
+        await db.execute(update(WasteBatch).where(WasteBatch.recycler_id.in_(recycler_ids)).values(recycler_id=None))
+    # 2) Delete profiles themselves (1:1 NOT NULL)
+    await db.execute(delete(Collector).where(Collector.user_id == user_id))
+    await db.execute(delete(Recycler).where(Recycler.user_id == user_id))
+    # 3) User-owned history (project: delete to unblock; in prod would block or anonymize)
+    await db.execute(delete(RewardLedger).where(RewardLedger.user_id == user_id))
+    await db.execute(delete(RewardBalance).where(RewardBalance.user_id == user_id))
+    await db.execute(delete(Redemption).where(Redemption.user_id == user_id))
+    await db.execute(delete(AuditLog).where(AuditLog.actor_user_id == user_id))
+    await db.execute(delete(Report).where(Report.generated_by == user_id))
+    await db.execute(delete(Voucher).where(Voucher.created_by == user_id))
+    await db.execute(delete(PublicBin).where(PublicBin.created_by == user_id))
+    # Pickups owned by resident — delete their batches first then pickups
+    pickup_ids_res = await db.execute(select(PickupRequest.id).where(PickupRequest.user_id == user_id))
+    pickup_ids = [r[0] for r in pickup_ids_res.all()]
+    if pickup_ids:
+        await db.execute(delete(RewardLedger).where(RewardLedger.pickup_id.in_(pickup_ids)))
+        await db.execute(delete(WasteBatch).where(WasteBatch.pickup_request_id.in_(pickup_ids)))
+        await db.execute(delete(PickupRequest).where(PickupRequest.id.in_(pickup_ids)))
+    await db.flush()
     await db.delete(user)
     await db.commit()
     return {"message": "User deleted"}

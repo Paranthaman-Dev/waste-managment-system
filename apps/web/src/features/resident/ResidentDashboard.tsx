@@ -1,6 +1,7 @@
-import React, { FormEvent, useEffect, useState } from 'react';
+import React, { FormEvent, useEffect, useState, Suspense } from 'react';
+
+import type { PaginatedResponse, PickupRequest, PublicBin, UserAnalytics } from '@wm/shared';
 import {
-  BinMap,
   Button,
   Input,
   Label,
@@ -15,16 +16,15 @@ import {
   Alert,
   StatCard,
   SkeletonKPI,
+  SkeletonMap,
   SkeletonTable,
-  DonutChart,
-  RadialGauge,
   useAuth,
   useToast,
   useRouter,
   apiRequest,
   wasteTypeOptions,
+  PickupCard,
 } from '@wm/shared';
-import type { PaginatedResponse, PickupRequest, PublicBin, UserAnalytics } from '@wm/shared';
 import { RewardsSection } from './RewardsSection';
 import {
   Truck,
@@ -33,7 +33,6 @@ import {
   MapPinned,
   Sparkles,
   Calendar,
-  Clock,
   PlusCircle,
   Search,
   Navigation,
@@ -42,6 +41,51 @@ import {
   Phone,
   ArrowRight,
 } from 'lucide-react';
+
+// True lazy code splitting per context7 docs — use export-mapped paths
+const LazyBinMap = React.lazy(() => import('@wm/shared/BinMap').then((m) => ({ default: m.BinMap })));
+const LazyDonutChart = React.lazy(() => import('@wm/shared/charts').then((m) => ({ default: m.DonutChart })));
+const LazyRadialGauge = React.lazy(() => import('@wm/shared/charts').then((m) => ({ default: m.RadialGauge })));
+
+// Simple ErrorBoundary — react-error-boundary not installed (matches App.tsx pattern)
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  state: { hasError: boolean; error?: Error } = { hasError: false, error: undefined };
+
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error('ErrorBoundary caught:', error, info);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        this.props.fallback ?? (
+          <div className="p-6 text-center" role="alert">
+            <p className="text-sm font-medium text-destructive">Something went wrong loading this section.</p>
+            {this.state.error?.message && (
+              <p className="text-xs text-muted-foreground mt-1">{this.state.error.message}</p>
+            )}
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: undefined })}
+              className="mt-3 inline-flex items-center rounded-md border border-border bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-muted"
+            >
+              Try again
+            </button>
+          </div>
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
 
 export function ResidentDashboard() {
   const { token, user } = useAuth();
@@ -293,19 +337,22 @@ export function ResidentDashboard() {
                   <CardDescription>Breakdown of recycled kilograms by stream</CardDescription>
                 </div>
               </CardHeader>
-              <div className="grid gap-6 md:grid-cols-[1.5fr_1fr] items-center">
-                <DonutChart
-                  data={donutData}
-                  centerValue={`${analytics?.total_kg_contributed ?? 0} kg`}
-                  centerLabel="Total Diverted"
-                />
-                <div className="flex flex-col items-center justify-center p-4 rounded-[12px] bg-surface-muted/60 border border-border/40 text-center space-y-2">
-                  <RadialGauge value={analytics?.completed_pickups || 1} max={analytics?.total_pickups || 1} label="Completion Rate" />
-                  <p className="text-xs text-muted-foreground">
-                    {analytics?.completed_pickups ?? 0} of {analytics?.total_pickups ?? 0} requests verified
-                  </p>
-                </div>
-              </div>
+              <ErrorBoundary>
+                <Suspense fallback={<SkeletonMap height={200} />}>
+                  <div className="grid gap-6 md:grid-cols-[1.5fr_1fr] items-center">
+                    <LazyDonutChart
+                      data={donutData}
+                      centerValue={`${analytics?.total_kg_contributed ?? 0} kg`}
+                      centerLabel="Total Diverted"
+                    />
+                    <LazyRadialGauge
+                      value={analytics?.completed_pickups || 1}
+                      max={analytics?.total_pickups || 1}
+                      label="Completion Rate"
+                    />
+                  </div>
+                </Suspense>
+              </ErrorBoundary>
             </Card>
           )}
 
@@ -336,28 +383,7 @@ export function ResidentDashboard() {
             ) : (
               <div className="space-y-2">
                 {pickups.slice(0, 4).map((p) => (
-                  <div
-                    key={p.id}
-                    className="rounded-[12px] border border-border bg-surface p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 hover:border-border-strong transition-colors"
-                  >
-                    <div className="space-y-0.5 min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-xs text-foreground capitalize">
-                          {p.waste_type} • {p.quantity_kg} kg
-                        </span>
-                        <Badge tone={pickupStatusTone(p.status)} dot>
-                          {p.status.replace('_', ' ')}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground flex items-center gap-1 truncate">
-                        <MapPin className="h-3 w-3 shrink-0" />
-                        {p.location}
-                      </p>
-                    </div>
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                      {new Date(p.requested_at).toLocaleDateString()}
-                    </span>
-                  </div>
+                  <PickupCard key={p.id} pickup={p} variant="compact" badgeTone={pickupStatusTone(p.status) as any} />
                 ))}
               </div>
             )}
@@ -502,17 +528,21 @@ export function ResidentDashboard() {
               <div className="lg:sticky lg:top-6 space-y-2 min-w-0">
                 <Label>Pin on map</Label>
                 <div className="relative rounded-[12px] overflow-hidden border border-border shadow-soft">
-                  <BinMap
-                    bins={bins}
-                    editable={false}
-                    onPick={(lat, lng) => {
-                      setPickupLat(lat);
-                      setPickupLng(lng);
-                      setLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
-                    }}
-                    height={420}
-                    selectedBinId={null}
-                  />
+                  <ErrorBoundary>
+                    <Suspense fallback={<SkeletonMap height={420} />}>
+                      <LazyBinMap
+                        bins={bins}
+                        editable={false}
+                        onPick={(lat, lng) => {
+                          setPickupLat(lat);
+                          setPickupLng(lng);
+                          setLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                        }}
+                        height={420}
+                        selectedBinId={null}
+                      />
+                    </Suspense>
+                  </ErrorBoundary>
                   <div className="pointer-events-none absolute left-1/2 top-1/2 z-[401] -translate-x-1/2 -translate-y-1/2">
                     <MapPinned className="h-8 w-8 text-safety fill-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.3)]" />
                   </div>
@@ -580,39 +610,7 @@ export function ResidentDashboard() {
             <>
               <div className="space-y-2">
                 {filteredPickups.map((p) => (
-                  <div
-                    key={p.id}
-                    className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:border-border-strong transition-all"
-                  >
-                    <div className="space-y-1">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-bold text-xs capitalize text-foreground">
-                          {p.waste_type} • {p.quantity_kg} kg
-                        </span>
-                        <Badge tone={pickupStatusTone(p.status)} dot>
-                          {p.status.replace('_', ' ')}
-                        </Badge>
-                        <span className="text-[10px] font-mono text-muted-foreground">#{p.id}</span>
-                      </div>
-
-                      <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                        <MapPin className="h-3 w-3 shrink-0" />
-                        {p.location}
-                      </p>
-
-                      {p.preferred_time && (
-                        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                          <Clock className="h-3 w-3 shrink-0" />
-                          Preferred: {new Date(p.preferred_time).toLocaleString()}
-                        </p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                      <Calendar className="h-3 w-3" />
-                      <span>Requested {new Date(p.requested_at).toLocaleDateString()}</span>
-                    </div>
-                  </div>
+                  <PickupCard key={p.id} pickup={p} variant="detailed" badgeTone={pickupStatusTone(p.status) as any} />
                 ))}
               </div>
 
@@ -694,12 +692,16 @@ export function ResidentDashboard() {
               )}
             </Card>
 
-            <BinMap
-              bins={bins}
-              height={480}
-              selectedBinId={selectedBinId}
-              onSelectBin={(b) => setSelectedBinId(b.id)}
-            />
+            <ErrorBoundary>
+              <Suspense fallback={<SkeletonMap height={480} />}>
+                <LazyBinMap
+                  bins={bins}
+                  height={480}
+                  selectedBinId={selectedBinId}
+                  onSelectBin={(b) => setSelectedBinId(b.id)}
+                />
+              </Suspense>
+            </ErrorBoundary>
           </div>
         </div>
       )}
