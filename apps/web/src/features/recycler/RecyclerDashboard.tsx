@@ -1,4 +1,4 @@
-import React, { ChangeEvent, useEffect, useState } from 'react';
+import React, { ChangeEvent, useEffect, useState, Suspense } from 'react';
 import {
   Button,
   Card,
@@ -13,7 +13,7 @@ import {
   SkeletonKPI,
   SkeletonTable,
   SkeletonGrid,
-  DonutChart,
+  SkeletonMap,
   useAuth,
   useToast,
   useRouter,
@@ -33,6 +33,89 @@ import {
   Eye,
   FileImage,
 } from 'lucide-react';
+
+// True lazy for charts — splits into dedicated chunk per vite.config manualChunks
+const LazyDonutChart = React.lazy(() => import('@wm/shared/charts').then((m) => ({ default: m.DonutChart })));
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode; fallback?: React.ReactNode }, { hasError: boolean; error?: Error }> {
+  state: { hasError: boolean; error?: Error } = { hasError: false, error: undefined };
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) { console.error('ErrorBoundary caught:', error, info); }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback ?? (
+        <div className="p-6 text-center" role="alert">
+          <p className="text-sm font-medium text-destructive">Something went wrong loading this section.</p>
+          {this.state.error?.message && <p className="text-xs text-muted-foreground mt-1">{this.state.error.message}</p>}
+          <button type="button" onClick={() => this.setState({ hasError: false, error: undefined })} className="mt-3 inline-flex items-center rounded-md border border-border bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-muted">Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Extracted batch cards — deduplicate picnic-style batch row JSX
+function AvailableBatchCard({ b, acting, onClaim }: { b: WasteBatch; acting: number | null; onClaim: (id: number) => void }) {
+  return (
+    <div className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col justify-between gap-2.5 hover:border-border-strong transition-all">
+      <div className="space-y-0.5">
+        <div className="flex items-center justify-between">
+          <span className="font-bold text-xs text-foreground">Batch #{b.id}</span>
+          <Badge tone="amber" dot>{b.status}</Badge>
+        </div>
+        <p className="text-[11px] text-muted-foreground">Origin: Pickup Request <span className="font-mono font-semibold text-foreground">#{b.pickup_request_id}</span></p>
+      </div>
+      <div className="pt-2 border-t border-border flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground">Ready for transfer</span>
+        <Button size="sm" onClick={() => onClaim(b.id)} loading={acting === b.id}>Claim Batch <ArrowRight className="h-3 w-3 ml-1" /></Button>
+      </div>
+    </div>
+  );
+}
+
+function MineBatchRow({
+  b,
+  acting,
+  onAccept,
+  onUpload,
+  onInspect,
+}: {
+  b: WasteBatch;
+  acting: number | null;
+  onAccept: (id: number) => void;
+  onUpload: (id: number, e: ChangeEvent<HTMLInputElement>) => void;
+  onInspect: (b: WasteBatch) => void;
+}) {
+  const statusTone = b.status === 'completed' ? 'sage' : b.status === 'accepted' || b.status === 'processing' ? 'info' : 'amber';
+  return (
+    <div className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="space-y-0.5">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-bold text-xs text-foreground">Batch #{b.id}</span>
+          <Badge tone={statusTone as any} dot>{b.status}</Badge>
+          <span className="text-[10px] text-muted-foreground font-mono">Pickup #{b.pickup_request_id}</span>
+        </div>
+        {b.handed_over_at && (
+          <p className="text-[11px] text-muted-foreground flex items-center gap-1"><Clock className="h-3 w-3 shrink-0" />Handed over: {new Date(b.handed_over_at).toLocaleString()}</p>
+        )}
+        {b.proof_url && (
+          <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1"><ShieldCheck className="h-3 w-3" />Verified proof attached</p>
+        )}
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        {b.status === 'requested' && <Button size="sm" onClick={() => onAccept(b.id)} loading={acting === b.id}>Confirm Handover</Button>}
+        {b.status !== 'completed' && (
+          <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border border-border bg-surface-muted px-2.5 text-[11px] font-semibold text-foreground hover:bg-stone transition-colors">
+            <UploadCloud className="h-3.5 w-3.5 text-primary" /><span>Upload Proof</span>
+            <input className="sr-only" type="file" accept="image/png,image/jpeg,image/webp" onChange={(e) => onUpload(b.id, e)} />
+          </label>
+        )}
+        {b.proof_url && <Button size="sm" variant="outline" onClick={() => onInspect(b)}><Eye className="h-3 w-3 mr-1" />Inspect</Button>}
+      </div>
+    </div>
+  );
+}
 
 export function RecyclerDashboard() {
   const { token } = useAuth();
@@ -237,29 +320,7 @@ export function RecyclerDashboard() {
             <>
               <div className="grid gap-3 sm:grid-cols-2">
                 {available.map((b) => (
-                  <div
-                    key={b.id}
-                    className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col justify-between gap-2.5 hover:border-border-strong transition-all"
-                  >
-                    <div className="space-y-0.5">
-                      <div className="flex items-center justify-between">
-                        <span className="font-bold text-xs text-foreground">Batch #{b.id}</span>
-                        <Badge tone="amber" dot>
-                          {b.status}
-                        </Badge>
-                      </div>
-                      <p className="text-[11px] text-muted-foreground">
-                        Origin: Pickup Request <span className="font-mono font-semibold text-foreground">#{b.pickup_request_id}</span>
-                      </p>
-                    </div>
-
-                    <div className="pt-2 border-t border-border flex items-center justify-between">
-                      <span className="text-[10px] text-muted-foreground">Ready for transfer</span>
-                      <Button size="sm" onClick={() => requestBatch(b.id)} loading={acting === b.id}>
-                        Claim Batch <ArrowRight className="h-3 w-3 ml-1" />
-                      </Button>
-                    </div>
-                  </div>
+                  <AvailableBatchCard key={b.id} b={b} acting={acting} onClaim={requestBatch} />
                 ))}
               </div>
 
@@ -297,71 +358,9 @@ export function RecyclerDashboard() {
           ) : (
             <>
               <div className="space-y-2">
-                {mine.map((b) => {
-                  const statusTone =
-                    b.status === 'completed' ? 'sage' : b.status === 'accepted' || b.status === 'processing' ? 'info' : 'amber';
-
-                  return (
-                    <div
-                      key={b.id}
-                      className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3"
-                    >
-                      <div className="space-y-0.5">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-xs text-foreground">Batch #{b.id}</span>
-                          <Badge tone={statusTone} dot>
-                            {b.status}
-                          </Badge>
-                          <span className="text-[10px] text-muted-foreground font-mono">
-                            Pickup #{b.pickup_request_id}
-                          </span>
-                        </div>
-
-                        {b.handed_over_at && (
-                          <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                            <Clock className="h-3 w-3 shrink-0" />
-                            Handed over: {new Date(b.handed_over_at).toLocaleString()}
-                          </p>
-                        )}
-
-                        {b.proof_url && (
-                          <p className="text-[11px] font-semibold text-emerald-600 flex items-center gap-1">
-                            <ShieldCheck className="h-3 w-3" />
-                            Verified proof attached
-                          </p>
-                        )}
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        {b.status === 'requested' && (
-                          <Button size="sm" onClick={() => acceptBatch(b.id)} loading={acting === b.id}>
-                            Confirm Handover
-                          </Button>
-                        )}
-
-                        {b.status !== 'completed' && (
-                          <label className="inline-flex h-9 cursor-pointer items-center justify-center gap-1.5 rounded-[10px] border border-border bg-surface-muted px-2.5 text-[11px] font-semibold text-foreground hover:bg-stone transition-colors">
-                            <UploadCloud className="h-3.5 w-3.5 text-primary" />
-                            <span>Upload Proof</span>
-                            <input
-                              className="sr-only"
-                              type="file"
-                              accept="image/png,image/jpeg,image/webp"
-                              onChange={(e) => uploadProof(b.id, e)}
-                            />
-                          </label>
-                        )}
-
-                        {b.proof_url && (
-                          <Button size="sm" variant="outline" onClick={() => setInspectedBatch(b)}>
-                            <Eye className="h-3 w-3 mr-1" />
-                            Inspect
-                          </Button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
+                {mine.map((b) => (
+                  <MineBatchRow key={b.id} b={b} acting={acting} onAccept={acceptBatch} onUpload={uploadProof} onInspect={setInspectedBatch} />
+                ))}
               </div>
 
               <Pagination page={pageM} totalPages={Math.ceil(totalM / 15) || 1} onPageChange={setPageM} />
@@ -406,22 +405,22 @@ export function RecyclerDashboard() {
                 </div>
               </CardHeader>
 
-              <div className="grid gap-6 md:grid-cols-[1.5fr_1fr] items-center">
-                <DonutChart
-                  data={donutData}
-                  centerValue={`${analytics?.total_kg_processed ?? 0} kg`}
-                  centerLabel="Processed"
-                />
-                <div className="space-y-2 p-3 rounded-[12px] bg-surface-muted/50 border border-border/40">
-                  <p className="text-xs font-bold text-foreground">Material Categories</p>
-                  {analytics?.by_waste_type.map((row) => (
-                    <div key={row.waste_type} className="flex items-center justify-between text-xs">
-                      <span className="capitalize text-muted-foreground">{row.waste_type}</span>
-                      <span className="font-semibold text-foreground">{row.total_kg} kg ({row.count} batches)</span>
+              <ErrorBoundary>
+                <Suspense fallback={<SkeletonMap height={220} />}>
+                  <div className="grid gap-6 md:grid-cols-[1.5fr_1fr] items-center">
+                    <LazyDonutChart data={donutData} centerValue={`${analytics?.total_kg_processed ?? 0} kg`} centerLabel="Processed" />
+                    <div className="space-y-2 p-3 rounded-[12px] bg-surface-muted/50 border border-border/40">
+                      <p className="text-xs font-bold text-foreground">Material Categories</p>
+                      {analytics?.by_waste_type.map((row) => (
+                        <div key={row.waste_type} className="flex items-center justify-between text-xs">
+                          <span className="capitalize text-muted-foreground">{row.waste_type}</span>
+                          <span className="font-semibold text-foreground">{row.total_kg} kg ({row.count} batches)</span>
+                        </div>
+                      ))}
                     </div>
-                  ))}
-                </div>
-              </div>
+                  </div>
+                </Suspense>
+              </ErrorBoundary>
             </Card>
           )}
         </div>

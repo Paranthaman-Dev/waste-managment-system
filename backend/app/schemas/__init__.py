@@ -29,6 +29,13 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     role: UserRole = UserRole.USER
 
+    @field_validator("role", mode="before")
+    @classmethod
+    def _lower_role(cls, v):
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
 class UserLogin(BaseModel):
     username: str
     password: str
@@ -52,6 +59,13 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     role: Optional[UserRole] = None
     username: Optional[str] = None
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _lower_role(cls, v):
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 class Token(BaseModel):
     access_token: str

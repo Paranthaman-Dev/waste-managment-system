@@ -1,6 +1,5 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, Suspense } from 'react';
 import {
-  RouteMap,
   Button,
   Card,
   CardHeader,
@@ -15,6 +14,7 @@ import {
   Switch,
   SkeletonGrid,
   SkeletonTable,
+  SkeletonMap,
   useAuth,
   useToast,
   useRouter,
@@ -32,6 +32,133 @@ import {
   ArrowRight,
   Check,
 } from 'lucide-react';
+
+// True lazy for heavy leaflet map — single chunk per vite.config manualChunks leaflet
+const LazyRouteMap = React.lazy(() => import('@wm/shared').then((m) => ({ default: m.RouteMap })));
+
+// Simple ErrorBoundary — matches ResidentDashboard/App.tsx pattern (react-error-boundary not installed)
+class ErrorBoundary extends React.Component<
+  { children: React.ReactNode; fallback?: React.ReactNode },
+  { hasError: boolean; error?: Error }
+> {
+  state: { hasError: boolean; error?: Error } = { hasError: false, error: undefined };
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error: Error, info: React.ErrorInfo) {
+    // eslint-disable-next-line no-console
+    console.error('ErrorBoundary caught:', error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        this.props.fallback ?? (
+          <div className="p-6 text-center" role="alert">
+            <p className="text-sm font-medium text-destructive">Something went wrong loading this section.</p>
+            {this.state.error?.message && <p className="text-xs text-muted-foreground mt-1">{this.state.error.message}</p>}
+            <button
+              type="button"
+              onClick={() => this.setState({ hasError: false, error: undefined })}
+              className="mt-3 inline-flex items-center rounded-md border border-border bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-muted"
+            >
+              Try again
+            </button>
+          </div>
+        )
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Extracted cards — deduplicate pickup list JSX (mirrors PickupCard pattern)
+function AvailableRequestCard({
+  p,
+  acting,
+  isAvailable,
+  onAccept,
+}: {
+  p: PickupRequest;
+  acting: number | null;
+  isAvailable: boolean;
+  onAccept: (id: number) => void;
+}) {
+  return (
+    <div className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col justify-between gap-2.5 hover:border-border-strong transition-all">
+      <div className="space-y-1.5">
+        <div className="flex items-start justify-between gap-2">
+          <div>
+            <span className="font-bold text-xs capitalize text-foreground">{p.waste_type} Stream</span>
+            <p className="text-[11px] text-primary font-semibold">{p.quantity_kg} kg estimated</p>
+          </div>
+          <Badge tone="amber" dot>{p.status}</Badge>
+        </div>
+        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+          <MapPin className="h-3 w-3 shrink-0" />{p.location}
+        </p>
+        {p.preferred_time && (
+          <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+            <Clock className="h-3 w-3 shrink-0" />Preferred: {new Date(p.preferred_time).toLocaleString()}
+          </p>
+        )}
+      </div>
+      <div className="pt-2 border-t border-border flex items-center justify-between">
+        <span className="text-[10px] text-muted-foreground">{new Date(p.requested_at).toLocaleDateString()}</span>
+        <Button size="sm" onClick={() => onAccept(p.id)} loading={acting === p.id} disabled={!isAvailable}>
+          Add to Route <ArrowRight className="h-3 w-3 ml-1" />
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function AssignedRouteRow({
+  p,
+  acting,
+  onUpdate,
+}: {
+  p: PickupRequest;
+  acting: number | null;
+  onUpdate: (id: number, status: string) => void;
+}) {
+  const statusTone = p.status === 'collected' ? 'sage' : p.status === 'en_route' ? 'info' : p.status === 'assigned' ? 'amber' : 'stone';
+  return (
+    <div className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="space-y-1">
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="font-bold text-xs capitalize text-foreground">{p.waste_type} • {p.quantity_kg} kg</span>
+          <Badge tone={statusTone as any} dot>{p.status.replace('_', ' ')}</Badge>
+          <span className="text-[10px] font-mono text-muted-foreground">#{p.id}</span>
+        </div>
+        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
+          <MapPin className="h-3 w-3 shrink-0" />{p.location}
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-1.5">
+        <Button size="sm" variant="outline" onClick={() => onUpdate(p.id, 'en_route')} loading={acting === p.id} disabled={p.status !== 'assigned'} className={p.status === 'en_route' ? 'border-blue-500 text-blue-600' : ''}>
+          <Navigation className="h-3 w-3 mr-1" />En Route
+        </Button>
+        <Button size="sm" onClick={() => onUpdate(p.id, 'collected')} loading={acting === p.id} disabled={p.status !== 'en_route'}>
+          <Check className="h-3 w-3 mr-1" />Confirm handover
+        </Button>
+        <Button size="sm" variant="ghost" onClick={() => onUpdate(p.id, 'declined')} disabled={p.status === 'collected'} className="text-[11px] text-red-600 hover:bg-red-50">
+          Decline
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ScheduleRow({ p }: { p: PickupRequest }) {
+  return (
+    <div className="rounded-[12px] border border-border bg-surface p-3 flex items-center justify-between text-xs">
+      <div>
+        <p className="font-semibold capitalize text-foreground">{p.waste_type} • {p.quantity_kg} kg <Badge tone="info">{p.status}</Badge></p>
+        <p className="text-[11px] text-muted-foreground mt-0.5">{p.location} • Preferred: {p.preferred_time ? new Date(p.preferred_time).toLocaleString() : 'Standard'}</p>
+      </div>
+    </div>
+  );
+}
 
 export function CollectorDashboard() {
   const { token } = useAuth();
@@ -262,7 +389,13 @@ export function CollectorDashboard() {
             <Badge tone="amber">{available.length} Waiting</Badge>
           </CardHeader>
 
-          {available.length > 0 && !loading && <RouteMap bins={bins} pickups={available} height={340} />}
+          {available.length > 0 && !loading && (
+            <ErrorBoundary>
+              <Suspense fallback={<SkeletonMap height={340} />}>
+                <LazyRouteMap bins={bins} pickups={available} height={340} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
 
           {loading ? (
             <SkeletonGrid cards={4} />
@@ -275,50 +408,7 @@ export function CollectorDashboard() {
           ) : (
             <div className="grid gap-3 sm:grid-cols-2">
               {available.map((p) => (
-                <div
-                  key={p.id}
-                  className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col justify-between gap-2.5 hover:border-border-strong transition-all"
-                >
-                  <div className="space-y-1.5">
-                    <div className="flex items-start justify-between gap-2">
-                      <div>
-                        <span className="font-bold text-xs capitalize text-foreground">
-                          {p.waste_type} Stream
-                        </span>
-                        <p className="text-[11px] text-primary font-semibold">{p.quantity_kg} kg estimated</p>
-                      </div>
-                      <Badge tone="amber" dot>
-                        {p.status}
-                      </Badge>
-                    </div>
-
-                    <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                      <MapPin className="h-3 w-3 shrink-0" />
-                      {p.location}
-                    </p>
-
-                    {p.preferred_time && (
-                      <p className="text-[10px] text-muted-foreground flex items-center gap-1">
-                        <Clock className="h-3 w-3 shrink-0" />
-                        Preferred: {new Date(p.preferred_time).toLocaleString()}
-                      </p>
-                    )}
-                  </div>
-
-                  <div className="pt-2 border-t border-border flex items-center justify-between">
-                    <span className="text-[10px] text-muted-foreground">
-                      {new Date(p.requested_at).toLocaleDateString()}
-                    </span>
-                    <Button
-                      size="sm"
-                      onClick={() => acceptPickup(p.id)}
-                      loading={acting === p.id}
-                      disabled={!collector?.is_available}
-                    >
-                      Add to Route <ArrowRight className="h-3 w-3 ml-1" />
-                    </Button>
-                  </div>
-                </div>
+                <AvailableRequestCard key={p.id} p={p} acting={acting} isAvailable={!!collector?.is_available} onAccept={acceptPickup} />
               ))}
             </div>
           )}
@@ -359,73 +449,20 @@ export function CollectorDashboard() {
           ) : (
             <>
               <div className="space-y-2">
-                {assigned.map((p) => {
-                  const statusTone =
-                    p.status === 'collected' ? 'sage' : p.status === 'en_route' ? 'info' : p.status === 'assigned' ? 'amber' : 'stone';
-
-                  return (
-                    <div
-                      key={p.id}
-                      className="rounded-[12px] border border-border bg-surface p-3.5 flex flex-col md:flex-row md:items-center justify-between gap-3"
-                    >
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-bold text-xs capitalize text-foreground">
-                            {p.waste_type} • {p.quantity_kg} kg
-                          </span>
-                          <Badge tone={statusTone} dot>
-                            {p.status.replace('_', ' ')}
-                          </Badge>
-                          <span className="text-[10px] font-mono text-muted-foreground">#{p.id}</span>
-                        </div>
-
-                        <p className="text-[11px] text-muted-foreground flex items-center gap-1">
-                          <MapPin className="h-3 w-3 shrink-0" />
-                          {p.location}
-                        </p>
-                      </div>
-
-                      <div className="flex flex-wrap items-center gap-1.5">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => updateStatus(p.id, 'en_route')}
-                          loading={acting === p.id}
-                          disabled={p.status !== 'assigned'}
-                          className={p.status === 'en_route' ? 'border-blue-500 text-blue-600' : ''}
-                        >
-                          <Navigation className="h-3 w-3 mr-1" />
-                          En Route
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          onClick={() => updateStatus(p.id, 'collected')}
-                          loading={acting === p.id}
-                          disabled={p.status !== 'en_route'}
-                        >
-                          <Check className="h-3 w-3 mr-1" />
-                          Confirm handover
-                        </Button>
-
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => updateStatus(p.id, 'declined')}
-                          disabled={p.status === 'collected'}
-                          className="text-[11px] text-red-600 hover:bg-red-50"
-                        >
-                          Decline
-                        </Button>
-                      </div>
-                    </div>
-                  );
-                })}
+                {assigned.map((p) => (
+                  <AssignedRouteRow key={p.id} p={p} acting={acting} onUpdate={updateStatus} />
+                ))}
               </div>
 
               <Pagination page={page} totalPages={Math.ceil(total / 15) || 1} onPageChange={setPage} />
               <div className="pt-2">
-                {assigned.length > 0 && <RouteMap bins={bins} pickups={assigned} height={380} />}
+                {assigned.length > 0 && (
+                  <ErrorBoundary>
+                    <Suspense fallback={<SkeletonMap height={380} />}>
+                      <LazyRouteMap bins={bins} pickups={assigned} height={380} />
+                    </Suspense>
+                  </ErrorBoundary>
+                )}
               </div>
             </>
           )}
@@ -460,23 +497,9 @@ export function CollectorDashboard() {
 
           <div className="space-y-2 pt-2">
             {schedule.length === 0 ? (
-              <EmptyState
-                title="No schedule loaded"
-                description="Select a date range to filter your upcoming pickup appointments."
-              />
+              <EmptyState title="No schedule loaded" description="Select a date range to filter your upcoming pickup appointments." />
             ) : (
-              schedule.map((p) => (
-                <div key={p.id} className="rounded-[12px] border border-border bg-surface p-3 flex items-center justify-between text-xs">
-                  <div>
-                    <p className="font-semibold capitalize text-foreground">
-                      {p.waste_type} • {p.quantity_kg} kg <Badge tone="info">{p.status}</Badge>
-                    </p>
-                    <p className="text-[11px] text-muted-foreground mt-0.5">
-                      {p.location} • Preferred: {p.preferred_time ? new Date(p.preferred_time).toLocaleString() : 'Standard'}
-                    </p>
-                  </div>
-                </div>
-              ))
+              schedule.map((p) => <ScheduleRow key={p.id} p={p} />)
             )}
           </div>
         </Card>

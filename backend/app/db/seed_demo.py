@@ -55,6 +55,7 @@ async def seed_all() -> None:
 
     demo = [
         ("admin", "admin@example.com", UserRole.MANAGEMENT, "admin123"),
+        ("admin1", "admin1@example.com", UserRole.MANAGEMENT, "admin123"),
         ("user1", "user1@example.com", UserRole.USER, "user123"),
         ("collector1", "collector1@example.com", UserRole.COLLECTOR, "collector123"),
         ("recycler1", "recycler1@example.com", UserRole.RECYCLER, "recycler123"),

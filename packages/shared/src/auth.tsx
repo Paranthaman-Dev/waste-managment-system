@@ -51,14 +51,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const refresh = useCallback(async () => {
-    if (!refreshToken) throw new Error('No refresh token');
+    const liveRefreshToken = localStorage.getItem('wm_refresh_token');
+    if (!liveRefreshToken) throw new Error('No refresh token');
     const data = await apiRequest<TokenResponse>('/auth/refresh', {
       method: 'POST',
-      body: JSON.stringify({ refresh_token: refreshToken }),
+      body: JSON.stringify({ refresh_token: liveRefreshToken }),
     });
     storeTokens(data);
     await loadUser(data.access_token);
-  }, [refreshToken, storeTokens, loadUser]);
+  }, [storeTokens, loadUser]);
 
   const logout = useCallback(async () => {
     if (token) await apiRequest('/auth/logout', { method: 'POST' }, token).catch(() => undefined);

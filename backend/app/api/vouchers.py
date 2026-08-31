@@ -120,25 +120,7 @@ async def update_redemption_status(
     return redemption
 
 
-@router.patch("/redemptions/{redemption_id}", response_model=RedemptionResponse)
-async def update_redemption_status(
-    redemption_id: int,
-    payload: dict,
-    current_user=Depends(require_management),
-    db: AsyncSession = Depends(get_db),
-):
-    """Manual voucher fulfillment: PENDING -> ISSUED or CANCELLED by admin."""
-    result = await db.execute(select(Redemption).where(Redemption.id == redemption_id))
-    redemption = result.scalar_one_or_none()
-    if not redemption:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Redemption not found")
-    new_status = (payload.get("status") or "").lower()
-    if new_status not in {"pending", "issued", "cancelled"}:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid status")
-    redemption.status = RedemptionStatus(new_status)
-    await db.commit()
-    await db.refresh(redemption)
-    return redemption
+
 
 
 @router.post("/redeem/{voucher_id}", response_model=RedemptionResponse, status_code=status.HTTP_201_CREATED)
