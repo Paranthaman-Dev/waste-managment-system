@@ -411,7 +411,7 @@ export function RouteMap({
                   </div>
                   <div className="space-y-0.5 text-[13px]">
                     <p className="text-muted-foreground">
-                      <span className="font-semibold text-foreground">Accepts:</span> {bin.accepted_waste_types.join(', ') || 'Any material'}
+                      <span className="font-semibold text-foreground">Accepts:</span> {(bin.accepted_waste_types ?? []).join(', ') || 'Any material'}
                     </p>
                     <p className="text-muted-foreground font-mono text-[11px]">
                       {bin.latitude.toFixed(4)}, {bin.longitude.toFixed(4)}

@@ -34,6 +34,6 @@
     reverse_proxy backend:8000
   }
   handle {
-    reverse_proxy frontend:80 host.docker.internal:5173
+    reverse_proxy frontend:80
   }
 }

@@ -181,8 +181,15 @@ class PublicBinCreate(BaseModel):
     name: str
     latitude: float
     longitude: float
-    accepted_waste_types: Optional[List[str]] = None
+    accepted_waste_types: Optional[List[str]] = Field(default_factory=list)
     capacity_kg: float = 0.0
+
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
 
 class PublicBinResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -202,6 +209,13 @@ class PublicBinUpdate(BaseModel):
     longitude: Optional[float] = None
     accepted_waste_types: Optional[List[str]] = None
     capacity_kg: Optional[float] = None
+
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
 
 # -------------------------------------------------------------------
 # Audit & Report

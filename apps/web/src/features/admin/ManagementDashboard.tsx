@@ -255,7 +255,7 @@ export function ManagementDashboard() {
         name: bin.name,
         latitude: bin.latitude,
         longitude: bin.longitude,
-        accepted_waste_types: bin.accepted_waste_types.join(', '),
+        accepted_waste_types: (bin.accepted_waste_types ?? []).join(', '),
         capacity_kg: bin.capacity_kg,
       });
     } else {
@@ -642,7 +642,7 @@ export function ManagementDashboard() {
                         {b.latitude.toFixed(4)}, {b.longitude.toFixed(4)} • {b.capacity_kg} kg
                       </p>
                     </div>
-                    <Badge tone="sage">{b.accepted_waste_types.length} Streams</Badge>
+                    <Badge tone="sage">{(b.accepted_waste_types ?? []).length} Streams</Badge>
                   </button>
                 ))}
               </div>

@@ -44,8 +44,18 @@ app.include_router(vouchers.router)
 async def on_startup():
     # Create tables if they don't exist (simple sync for demo purposes)
     from sqlmodel import SQLModel
+    from sqlalchemy import text
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.create_all)
+        # Backfill legacy rows where accepted_waste_types is NULL (project data)
+        try:
+            await conn.execute(text("UPDATE public_bins SET accepted_waste_types='[]' WHERE accepted_waste_types IS NULL"))
+        except Exception:
+            pass
+        try:
+            await conn.execute(text("UPDATE recyclers SET accepted_waste_types='[]' WHERE accepted_waste_types IS NULL"))
+        except Exception:
+            pass
 
 @app.get("/health", response_class=JSONResponse)
 async def health_check():

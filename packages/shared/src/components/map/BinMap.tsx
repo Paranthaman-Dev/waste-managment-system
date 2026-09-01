@@ -104,11 +104,12 @@ export function BinMap({
     );
   };
 
-  const getWasteTypeColor = (types: string[]) => {
-    if (types.includes('organic')) return '#10B981';
-    if (types.includes('plastic')) return '#3B82F6';
-    if (types.includes('e-waste')) return '#8B5CF6';
-    if (types.includes('metal')) return '#F97316';
+  const getWasteTypeColor = (types?: string[] | null) => {
+    const t = types ?? [];
+    if (t.includes('organic')) return '#10B981';
+    if (t.includes('plastic')) return '#3B82F6';
+    if (t.includes('e-waste')) return '#8B5CF6';
+    if (t.includes('metal')) return '#F97316';
     return '#10B981';
   };
 
@@ -208,7 +209,7 @@ export function BinMap({
                   <div className="space-y-0.5 text-[13px]">
                     <p className="text-muted-foreground">
                       <span className="font-semibold text-foreground">Accepts:</span>{' '}
-                      {bin.accepted_waste_types.join(', ') || 'Any material'}
+                      {(bin.accepted_waste_types ?? []).join(', ') || 'Any material'}
                     </p>
                     <p className="text-muted-foreground font-mono text-[11px]">
                       {bin.latitude.toFixed(4)}, {bin.longitude.toFixed(4)}
