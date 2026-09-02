@@ -347,9 +347,13 @@ async def list_recyclers(
     query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
     recyclers = result.scalars().all()
+    # Ensure accepted_waste_types never serializes as null (defensive for legacy rows)
+    for r in recyclers:
+        if r.accepted_waste_types is None:
+            r.accepted_waste_types = []
     
     return PaginatedResponse(
-        items=recyclers,
+        items=[RecyclerResponse.model_validate(r) for r in recyclers],
         total=total,
         page=page,
         page_size=page_size,
@@ -583,7 +587,7 @@ async def generate_report(
             writer = csv.writer(f)
             writer.writerow(["ID", "Name", "Latitude", "Longitude", "Accepted Waste Types", "Capacity (kg)", "Created By", "Created At"])
             for b in bins:
-                writer.writerow([b.id, b.name, b.latitude, b.longitude, ",".join(b.accepted_waste_types), b.capacity_kg, b.created_by, b.created_at])
+                writer.writerow([b.id, b.name, b.latitude, b.longitude, ",".join(b.accepted_waste_types or []), b.capacity_kg, b.created_by, b.created_at])
     
     else:
         raise HTTPException(

@@ -12,6 +12,8 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import JSONResponse as SlowJSONResponse
 
+from pathlib import Path
+
 from .db.session import engine
 from .core.config import get_settings
 
@@ -60,3 +62,23 @@ async def on_startup():
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
     return {"status": "ok"}
+
+
+# Serve built frontend (apps/web/dist) when present — enables single-port on Render
+try:
+    dist = Path(__file__).resolve().parents[2] / "apps" / "web" / "dist"
+    # also try repo root when running with different cwd (e.g. /app on Render)
+    if not dist.exists():
+        alt = Path.cwd() / "apps" / "web" / "dist"
+        if alt.exists():
+            dist = alt
+    if dist.exists() and (dist / "index.html").exists():
+        from fastapi.staticfiles import StaticFiles
+
+        # mount at /assets first (vite hashed assets)
+        if (dist / "assets").exists():
+            app.mount("/assets", StaticFiles(directory=str(dist / "assets")), name="assets")
+        # catch-all for SPA — must be last
+        app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
+except Exception:
+    pass

@@ -24,8 +24,8 @@
 #
 # Single-port architecture:
 #   - Dev:  vite on :5173 proxies /auth etc → :8000 (vite.config.ts proxy)
-#   - Prod: caddy on :8080 reverse_proxy → backend:8000 + host.docker.internal:5173 (Caddyfile)
-#   - Full podman: podman-compose up -d backend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
+#   - Prod: caddy on :8080 reverse_proxy → backend:8000 + frontend:80 (Caddyfile handle { reverse_proxy frontend:80 })
+#   - Full podman: podman-compose up -d backend frontend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
 #
 # Requirements:
 #   - python3 (3.12+ recommended, 3.14 works with current pins)
@@ -77,8 +77,8 @@ Env handling:
 
 Single-port architecture:
   - Dev:  vite on :5173 proxies /auth etc → :8000 (vite.config.ts proxy)
-  - Prod: caddy on :8080 reverse_proxy → backend:8000 + host.docker.internal:5173 (Caddyfile)
-  - Full podman: podman-compose up -d backend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
+  - Prod: caddy on :8080 reverse_proxy → backend:8000 + frontend:80 (Caddyfile handle { reverse_proxy frontend:80 })
+  - Full podman: podman-compose up -d backend frontend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
 HELPEOF
       exit 0
       ;;
@@ -106,12 +106,13 @@ else
   COMPOSE=""
 fi
 
-# detect compose file (canonical: compose.yml -> docker-compose.yml -> podman-compose.yml)
-COMPOSE_FILE=""
-for f in compose.yml compose.yaml docker-compose.yml docker-compose.yaml podman-compose.yml; do
-  if [[ -f "$f" ]]; then COMPOSE_FILE="$f"; break; fi
-done
-[[ -z "$COMPOSE_FILE" ]] && COMPOSE_FILE="podman-compose.yml"
+# detect compose file (canonical: podman-compose.yml alone; compose.yml symlink removed)
+COMPOSE_FILE="podman-compose.yml"
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  for f in compose.yml compose.yaml docker-compose.yml docker-compose.yaml; do
+    if [[ -f "$f" ]]; then COMPOSE_FILE="$f"; warn "Using fallback $f (canonical is podman-compose.yml)"; break; fi
+  done
+fi
 
 # ---------- 1. .env ----------
 if [[ ! -f .env ]]; then

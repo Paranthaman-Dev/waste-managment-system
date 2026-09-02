@@ -263,11 +263,12 @@ export function RouteMap({
     );
   }, []);
 
-  const getWasteTypeColor = (types: string[]) => {
-    if (types.includes('organic')) return '#10B981';
-    if (types.includes('plastic')) return '#3B82F6';
-    if (types.includes('e-waste')) return '#8B5CF6';
-    if (types.includes('metal')) return '#F97316';
+  const getWasteTypeColor = (types?: string[] | null) => {
+    const t = types ?? [];
+    if (t.includes('organic')) return '#10B981';
+    if (t.includes('plastic')) return '#3B82F6';
+    if (t.includes('e-waste')) return '#8B5CF6';
+    if (t.includes('metal')) return '#F97316';
     return '#10B981';
   };
 

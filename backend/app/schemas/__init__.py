@@ -105,6 +105,13 @@ class RecyclerResponse(BaseModel):
     capacity_kg: float
     rating: float
 
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
+
 class RecyclerUpdate(BaseModel):
     accepted_waste_types: Optional[List[str]] = None
     capacity_kg: Optional[float] = None
@@ -202,6 +209,13 @@ class PublicBinResponse(BaseModel):
     created_by: int
     created_at: datetime
     updated_at: datetime
+
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
 
 class PublicBinUpdate(BaseModel):
     name: Optional[str] = None
