@@ -3,8 +3,8 @@ Sets up the application, registers routers, and provides a simple health‑check
 Uses venv for runtime, postgres via podman for DB (no podman for backend).
 """
 
-from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
@@ -78,7 +78,27 @@ try:
         # mount at /assets first (vite hashed assets)
         if (dist / "assets").exists():
             app.mount("/assets", StaticFiles(directory=str(dist / "assets")), name="assets")
-        # catch-all for SPA — must be last
+
+        # SPA fallback for browser hard-refresh / direct URL (e.g. /analytics, /my-batches)
+        # Routes are client-side (history.pushState); server should return index.html for non-API paths
+        API_EXCLUDE = (
+            "/auth", "/user", "/collector", "/recycler", "/management",
+            "/rewards", "/vouchers", "/health", "/docs", "/redoc", "/openapi.json",
+            "/assets", "/uploads",
+        )
+
+        @app.get("/{full_path:path}")
+        async def spa_fallback(full_path: str, request: Request):
+            # Let API 404s stay JSON, not HTML
+            if any(request.url.path.startswith(p) for p in API_EXCLUDE):
+                raise HTTPException(status_code=404, detail="Not found")
+            idx = dist / "index.html"
+            if idx.exists():
+                return FileResponse(str(idx), media_type="text/html")
+            raise HTTPException(status_code=404, detail="Not found")
+
+        # catch-all for SPA — must be last (fallback route wins for SPA, static for files)
+        # Keep StaticFiles mount for direct file serving; fallback route handles SPA deep links
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
 except Exception:
     pass

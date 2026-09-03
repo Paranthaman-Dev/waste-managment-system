@@ -32,6 +32,7 @@ import {
   ShieldCheck,
   Eye,
   FileImage,
+  RefreshCw,
 } from 'lucide-react';
 
 // True lazy for charts — splits into dedicated chunk per vite.config manualChunks
@@ -371,6 +372,13 @@ export function RecyclerDashboard() {
 
       {tab === 'analytics' && (
         <div className="space-y-6 animate-fade-in">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-muted-foreground">Pull latest plant recovery metrics</p>
+            <Button size="sm" variant="outline" onClick={loadData} disabled={loading} aria-label="Refresh analytics">
+              <RefreshCw className={`h-3 w-3 mr-1 ${loading ? 'animate-spin' : ''}`} />
+              Refresh
+            </Button>
+          </div>
           {loading ? (
             <SkeletonKPI count={3} />
           ) : (
