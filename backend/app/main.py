@@ -6,6 +6,7 @@ Uses venv for runtime, postgres via podman for DB (no podman for backend).
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 from slowapi import Limiter
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -32,6 +33,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Fix stale chunk 404: HTML must be no-cache, hashed assets immutable (Cloudflare respects)
+@app.middleware("http")
+async def cache_headers(request: Request, call_next):
+    resp = await call_next(request)
+    path = request.url.path
+    ctype = resp.headers.get("content-type", "")
+    if path.startswith("/assets/"):
+        resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+    elif path == "/" or path == "/index.html" or ctype.startswith("text/html"):
+        # SPA shell — never cache, otherwise old HTML requests old hashed chunks -> 404
+        resp.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        resp.headers["Pragma"] = "no-cache"
+        resp.headers["Expires"] = "0"
+    return resp
 
 # Register routers from canonical api package (venv-based)
 from .api import auth, user, collector, recycler, management, rewards, vouchers
@@ -75,7 +91,7 @@ try:
     if dist.exists() and (dist / "index.html").exists():
         from fastapi.staticfiles import StaticFiles
 
-        # mount at /assets first (vite hashed assets)
+        # mount at /assets first (vite hashed assets) — immutable via middleware
         if (dist / "assets").exists():
             app.mount("/assets", StaticFiles(directory=str(dist / "assets")), name="assets")
 
@@ -87,18 +103,26 @@ try:
             "/assets", "/uploads",
         )
 
-        @app.get("/{full_path:path}")
+        @app.api_route("/{full_path:path}", methods=["GET", "HEAD"])
         async def spa_fallback(full_path: str, request: Request):
             # Let API 404s stay JSON, not HTML
             if any(request.url.path.startswith(p) for p in API_EXCLUDE):
                 raise HTTPException(status_code=404, detail="Not found")
             idx = dist / "index.html"
             if idx.exists():
-                return FileResponse(str(idx), media_type="text/html")
+                # index.html must never be cached — stale HTML + new hashed assets = chunk 404
+                return FileResponse(
+                    str(idx),
+                    media_type="text/html",
+                    headers={
+                        "Cache-Control": "no-cache, no-store, must-revalidate",
+                        "Pragma": "no-cache",
+                        "Expires": "0",
+                    },
+                )
             raise HTTPException(status_code=404, detail="Not found")
 
         # catch-all for SPA — must be last (fallback route wins for SPA, static for files)
-        # Keep StaticFiles mount for direct file serving; fallback route handles SPA deep links
         app.mount("/", StaticFiles(directory=str(dist), html=True), name="frontend")
 except Exception:
     pass

@@ -31,7 +31,7 @@ const ManagementDashboard = React.lazy(() =>
   import('./features/admin/ManagementDashboard').then((m) => ({ default: m.ManagementDashboard })),
 );
 
-// Simple ErrorBoundary — react-error-boundary not installed (checked package.json)
+// Simple ErrorBoundary — handles stale chunk 404 after deploy (Vite hashed assets)
 class ErrorBoundary extends React.Component<
   { children: React.ReactNode; fallback?: React.ReactNode },
   { hasError: boolean; error?: Error }
@@ -43,12 +43,56 @@ class ErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
+    const msg = error?.message || '';
+    const isChunkError =
+      msg.includes('Failed to fetch dynamically imported module') ||
+      msg.includes('Importing a module script failed') ||
+      msg.includes('Loading chunk') ||
+      msg.includes('ChunkLoadError') ||
+      msg.includes('error loading dynamically imported module');
+    if (isChunkError) {
+      try {
+        const key = 'chunk-reload';
+        if (!sessionStorage.getItem(key)) {
+          sessionStorage.setItem(key, '1');
+          // hard reload to fetch fresh index.html + hashed assets (fixes 404 on old chunk)
+          window.location.reload();
+          return;
+        }
+      } catch {}
+    }
     // eslint-disable-next-line no-console
     console.error('ErrorBoundary caught:', error, info);
   }
 
   render() {
     if (this.state.hasError) {
+      const msg = this.state.error?.message || '';
+      const isChunkError =
+        msg.includes('Failed to fetch dynamically imported module') ||
+        msg.includes('Importing a module script failed') ||
+        msg.includes('Loading chunk') ||
+        msg.includes('ChunkLoadError');
+      if (isChunkError) {
+        return (
+          <div className="p-6 text-center" role="alert">
+            <p className="text-sm font-medium text-destructive">A new version is available.</p>
+            <p className="text-xs text-muted-foreground mt-1">The app was updated — reloading with fresh assets.</p>
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  sessionStorage.removeItem('chunk-reload');
+                } catch {}
+                window.location.reload();
+              }}
+              className="mt-3 inline-flex items-center rounded-md border border-border bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-muted"
+            >
+              Reload now
+            </button>
+          </div>
+        );
+      }
       return (
         this.props.fallback ?? (
           <div className="p-6 text-center" role="alert">
@@ -115,6 +159,19 @@ const adminNav: NavItem[] = [
 
 export function App() {
   const { user, role, loading } = useAuth();
+  React.useEffect(() => {
+    try {
+      // clear stale chunk reload flag after successful load
+      if (sessionStorage.getItem('chunk-reload')) {
+        // keep for 5s then clear to allow next deploy to auto-reload once
+        setTimeout(() => {
+          try {
+            sessionStorage.removeItem('chunk-reload');
+          } catch {}
+        }, 5000);
+      }
+    } catch {}
+  }, []);
 
   if (loading)
     return (
