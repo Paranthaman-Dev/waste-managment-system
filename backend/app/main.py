@@ -40,7 +40,7 @@ async def cache_headers(request: Request, call_next):
     resp = await call_next(request)
     path = request.url.path
     ctype = resp.headers.get("content-type", "")
-    if path.startswith("/assets/"):
+    if path.startswith("/assets/") and resp.status_code == 200:
         resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
     elif path == "/" or path == "/index.html" or ctype.startswith("text/html"):
         # SPA shell — never cache, otherwise old HTML requests old hashed chunks -> 404
