@@ -2,6 +2,17 @@
 
 > `podman-compose.yml` **canonical** (no `docker-compose.yml`) `Caddy :8080` `Uploads /app/uploads` `AUTO_SEED=1`
 
+## Live Deployments
+
+| Env | URL | Branch | Service | Health | Deploy Via |
+|-----|-----|--------|---------|--------|------------|
+| **Prod (Render)** | [`https://waste-managment-system-873w.onrender.com`](https://waste-managment-system-873w.onrender.com) | `main` | `srv-dabh7gm1egvs73c3l10g` `python free oregon` | [`/health`](https://waste-managment-system-873w.onrender.com/health) [`/docs`](https://waste-managment-system-873w.onrender.com/docs) [`/analytics`](https://waste-managment-system-873w.onrender.com/analytics) | `MCP https://mcp.render.com/mcp` `POST /v1/services/.../deploys` |
+| **Local Podman** | [`http://localhost:8080`](http://localhost:8080) | `main` | `podman-compose.yml` `backend:8000` `frontend:80` `caddy:8080` | `http://localhost:8000/health` | `podman-compose up -d --build` |
+| **Local Vite** | [`http://localhost:5173`](http://localhost:5173) | `main` | `vite proxy` | `http://127.0.0.1:8000/health` | `./start.sh` |
+| **Dashboard** | [`https://dashboard.render.com/web/srv-dabh7gm1egvs73c3l10g`](https://dashboard.render.com/web/srv-dabh7gm1egvs73c3l10g) | `main` | `Render` | — | `MCP rnd_kxyrKFGt` |
+
+> **Quick Live Check:** `curl https://waste-managment-system-873w.onrender.com/health # {"status":"ok"}` `curl https://waste-managment-system-873w.onrender.com/user/bins -H "Authorization: Bearer $TOKEN" | jq`
+
 ## Podman (prod-like)
 
 ```bash

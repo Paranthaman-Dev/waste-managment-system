@@ -1,12 +1,15 @@
 # ♻️ Reclaim — Civic Waste OS
 
 <p align="center">
+  <a href="https://waste-managment-system-873w.onrender.com"><img src="https://img.shields.io/badge/Live%20App-Render-4a7c59?style=for-the-badge&logo=render" alt="Live App" /></a>
+  <a href="https://waste-managment-system-873w.onrender.com/docs"><img src="https://img.shields.io/badge/API%20Docs-Swagger-f9a620?style=for-the-badge&logo=fastapi" alt="API Docs" /></a>
   <img src="https://img.shields.io/badge/Stack-FastAPI%20%7C%20React%2019%20%7C%20Vite%208-4a7c59?style=for-the-badge" alt="Stack" />
-  <img src="https://img.shields.io/badge/Portal-Single%20Port%20:5173%20%2B%20:8080-f9a620?style=for-the-badge" alt="Portal" />
+  <img src="https://img.shields.io/badge/Portal-Single%20Port%20:5173%20%2B%20:8080-4a7c59?style=for-the-badge" alt="Portal" />
   <img src="https://img.shields.io/badge/Tests-20%20passed-4a7c59?style=for-the-badge" alt="Tests" />
   <img src="https://img.shields.io/badge/License-MIT-b7472a?style=for-the-badge" alt="License" />
-  <img src="https://img.shields.io/badge/Deploy-Render%20Live-4a7c59?style=for-the-badge" alt="Deploy" />
 </p>
+
+> **🚀 Live Deployment:** [`https://waste-managment-system-873w.onrender.com`](https://waste-managment-system-873w.onrender.com) · `API → [/docs](https://waste-managment-system-873w.onrender.com/docs) · [/health](https://waste-managment-system-873w.onrender.com/health)` · `Dashboard → [Render](https://dashboard.render.com/web/srv-dabh7gm1egvs73c3l10g)` `srv-dabh7gm1egvs73c3l10g` `main`
 
 <p align="center">
   <b>Role-based waste collection & recovery OS — one login, four portals, zero waste.</b><br/>
@@ -195,9 +198,16 @@ npm run build      # 1888 modules → dist/index.html 2.25kB assets 64k
 
 ---
 
-## 🌐 Deploy
+## 🌐 Deployments
 
-**Render** `https://mcp.render.com/mcp` `srv-dabh7gm1egvs73c3l10g` `https://waste-managment-system-873w.onrender.com` `branch main` `build pip+npm` `start uvicorn --port $PORT` `health /health` `env DATABASE_URL=sqlite+aiosqlite:////app/data/waste.db` (or `postgresql+asyncpg://` with disk for prod). `main.py:83` serves `dist` + `uploads` single-port, `Cache-Control middleware` `assets immutable 1y` `index.html no-cache` + `ErrorBoundary` `chunk-reload` auto-reload on `Failed to fetch dynamically imported module`.
+| Env | URL | Branch | Service | Health | Via |
+|-----|-----|--------|---------|--------|-----|
+| **Prod (Render)** | [`https://waste-managment-system-873w.onrender.com`](https://waste-managment-system-873w.onrender.com) | `main` | `srv-dabh7gm1egvs73c3l10g` `python free oregon` | [`/health`](https://waste-managment-system-873w.onrender.com/health) [`/docs`](https://waste-managment-system-873w.onrender.com/docs) | `MCP https://mcp.render.com/mcp` `rnd_kxyrKFGt` `build pip+npm` `start uvicorn --port $PORT` |
+| **Local Podman** | [`http://localhost:8080`](http://localhost:8080) `+ :8000` | `main` | `podman-compose.yml` `backend:8000` `frontend:80` `caddy:8080` | `http://localhost:8000/health` | `podman-compose up -d --build` |
+| **Local Vite** | [`http://localhost:5173`](http://localhost:5173) | `main` | `npm run dev -w @wm/web` `proxy /auth → :8000` | `http://127.0.0.1:8000/health` | `./start.sh` |
+| **Dashboard** | [`https://dashboard.render.com/web/srv-dabh7gm1egvs73c3l10g`](https://dashboard.render.com/web/srv-dabh7gm1egvs73c3l10g) | `main` | `Render` | — | `MCP` `POST /v1/services/.../deploys` |
+
+**Render** `https://mcp.render.com/mcp` `branch main` `build pip+npm` `start uvicorn --port $PORT` `health /health` `env DATABASE_URL=sqlite+aiosqlite:////app/data/waste.db` (or `postgresql+asyncpg://` with disk for prod). `main.py:83` serves `dist` + `uploads` single-port, `Cache-Control middleware` `assets immutable 1y` `index.html no-cache` + `ErrorBoundary` `chunk-reload` auto-reload on `Failed to fetch dynamically imported module`.
 
 **NGINX/Caddy:** `apps/web/Dockerfile` `node:20-alpine → nginx:alpine` `try_files $uri /index.html` `Caddyfile:3 handle /auth* → backend:8000` `handle { frontend:80 }`.
 
