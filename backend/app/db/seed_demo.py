@@ -5,7 +5,8 @@ from sqlmodel import SQLModel, select, func
 
 from app.core.security import get_password_hash
 from app.db.session import AsyncSessionLocal, engine
-from app.models import User, UserRole, Collector, Recycler, PickupRequest, PickupStatus, WasteBatch, BatchStatus
+from app.core.config import calculate_points
+from app.models import User, UserRole, Collector, Recycler, PickupRequest, PickupStatus, WasteBatch, BatchStatus, Voucher, RewardLedger, RewardBalance
 
 
 async def upsert_user(username: str, email: str, role: UserRole, password: str) -> User:
@@ -108,6 +109,75 @@ async def seed_demo_batches() -> None:
         # verify analytics
         total = (await db.execute(select(func.sum(PickupRequest.quantity_kg)).join(WasteBatch, WasteBatch.pickup_request_id == PickupRequest.id).where(WasteBatch.recycler_id == recycler.id, WasteBatch.status == BatchStatus.COMPLETED))).scalar() or 0
         print(f"  demo analytics total_kg_processed={total}")
+        # seed rewards/vouchers so fresh DB has catalogue + balances
+        await seed_rewards_and_vouchers()
+
+
+async def seed_rewards_and_vouchers() -> None:
+    """Seed vouchers + reward balances so fresh DB has catalogue. Idempotent."""
+    async with AsyncSessionLocal() as db:
+        vcnt = (await db.execute(select(func.count(Voucher.id)))).scalar() or 0
+        if vcnt == 0:
+            admin = (await db.execute(select(User).where(User.username == "admin"))).scalar_one_or_none()
+            admin_id = admin.id if admin else 1
+            now = datetime.now(timezone.utc).replace(tzinfo=None)
+            from datetime import timedelta
+
+            demos = [
+                ("₹100 Off", "Flat ₹100 off on next pickup", 100, 30),
+                ("Eco Kit", "Reusable kit + bin", 150, 30),
+                ("Compost Bin", "Home compost bin", 300, 60),
+                ("Recycle Hero Badge", "Digital badge + 5% bonus", 50, 60),
+                ("Free Pickup 5kg", "Free 5kg pickup", 200, 30),
+            ]
+            for title, desc, cost, days in demos:
+                v = Voucher(
+                    title=title,
+                    description=desc,
+                    cost_points=cost,
+                    active=True,
+                    created_by=admin_id,
+                    valid_until=now + timedelta(days=days),
+                )
+                db.add(v)
+            await db.flush()
+            print(f"  seeded {len(demos)} vouchers")
+        # seed reward balance + ledger for user1 based on completed pickups
+        user1 = (await db.execute(select(User).where(User.username == "user1"))).scalar_one_or_none()
+        if user1:
+            # balance
+            bal = (await db.execute(select(RewardBalance).where(RewardBalance.user_id == user1.id))).scalar_one_or_none()
+            if bal is None:
+                # compute points from completed pickups (metal 15*10=150, plastic 10*10=100) = 250
+                # use same rates as config
+                completed = (await db.execute(select(PickupRequest).join(WasteBatch, WasteBatch.pickup_request_id == PickupRequest.id).where(WasteBatch.status == BatchStatus.COMPLETED))).scalars().all()
+                total_pts = 0
+                for p in completed:
+                    total_pts += calculate_points(float(p.quantity_kg), p.waste_type)
+                if total_pts == 0:
+                    total_pts = 250
+                db.add(RewardBalance(user_id=user1.id, balance=total_pts, lifetime_earned=total_pts))
+                await db.flush()
+                print(f"  seeded reward balance user1 {total_pts}")
+            # ledger per completed pickup (idempotent on pickup_id)
+            completed_pickups = (await db.execute(select(PickupRequest).join(WasteBatch, WasteBatch.pickup_request_id == PickupRequest.id).where(WasteBatch.status == BatchStatus.COMPLETED))).scalars().all()
+            for p in completed_pickups:
+                exists = (await db.execute(select(RewardLedger).where(RewardLedger.pickup_id == p.id))).scalar_one_or_none()
+                if exists is None:
+                    pts = calculate_points(float(p.quantity_kg), p.waste_type)
+                    db.add(
+                        RewardLedger(
+                            user_id=p.user_id,
+                            pickup_id=p.id,
+                            batch_id=(await db.execute(select(WasteBatch).where(WasteBatch.pickup_request_id == p.id))).scalar_one().id,
+                            waste_type=p.waste_type,
+                            weight_kg=float(p.quantity_kg),
+                            points=pts,
+                        )
+                    )
+            await db.commit()
+            cnt = (await db.execute(select(func.count(RewardLedger.id)))).scalar() or 0
+            print(f"  reward ledger count={cnt}")
 
 
 async def seed_all() -> None:
@@ -126,6 +196,7 @@ async def seed_all() -> None:
         print(f"  seeded {username!r:16} role={u.role.value}")
 
     await seed_demo_batches()
+    await seed_rewards_and_vouchers()
 
 
 if __name__ == "__main__":
