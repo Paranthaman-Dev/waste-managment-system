@@ -24,8 +24,8 @@
 #
 # Single-port architecture:
 #   - Dev:  vite on :5173 proxies /auth etc → :8000 (vite.config.ts proxy)
-#   - Prod: caddy on :8080 reverse_proxy → backend:8000 + host.docker.internal:5173 (Caddyfile)
-#   - Full podman: podman-compose up -d backend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
+#   - Prod: caddy on :8080 reverse_proxy → backend:8000 + frontend:80 (Caddyfile handle { reverse_proxy frontend:80 })
+#   - Full podman: podman-compose up -d backend frontend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
 #
 # Requirements:
 #   - python3 (3.12+ recommended, 3.14 works with current pins)
@@ -77,8 +77,8 @@ Env handling:
 
 Single-port architecture:
   - Dev:  vite on :5173 proxies /auth etc → :8000 (vite.config.ts proxy)
-  - Prod: caddy on :8080 reverse_proxy → backend:8000 + host.docker.internal:5173 (Caddyfile)
-  - Full podman: podman-compose up -d backend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
+  - Prod: caddy on :8080 reverse_proxy → backend:8000 + frontend:80 (Caddyfile handle { reverse_proxy frontend:80 })
+  - Full podman: podman-compose up -d backend frontend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data)
 HELPEOF
       exit 0
       ;;
@@ -104,6 +104,14 @@ elif command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
   COMPOSE="docker compose"
 else
   COMPOSE=""
+fi
+
+# detect compose file (canonical: podman-compose.yml alone; compose.yml symlink removed)
+COMPOSE_FILE="podman-compose.yml"
+if [[ ! -f "$COMPOSE_FILE" ]]; then
+  for f in compose.yml compose.yaml docker-compose.yml docker-compose.yaml; do
+    if [[ -f "$f" ]]; then COMPOSE_FILE="$f"; warn "Using fallback $f (canonical is podman-compose.yml)"; break; fi
+  done
 fi
 
 # ---------- 1. .env ----------
@@ -227,7 +235,7 @@ mkdir -p uploads  # legacy path used by some code/tests
 ok "Upload dirs ready: $UPLOAD_DIR"
 
 # ---------- 4. postgres via podman (only required container) — now sqlite-only, postgres kept for --postgres manual  ----------
-if [[ "$MODE" == "postgres" ]] && grep -q "postgres:" podman-compose.yml; then
+if [[ "$MODE" == "postgres" ]] && grep -q "postgres:" "$COMPOSE_FILE"; then
   if [[ -z "$COMPOSE" ]]; then
     echo "ERROR: podman-compose (or docker compose) not found but --postgres mode requires it." >&2
     echo "Install podman-compose (pip install podman-compose) or use --sqlite" >&2
@@ -354,7 +362,7 @@ fi
 # ---------- 6b. caddy — optional single-port :8080 (podman) ----------
 # Dev uses vite proxy on :5173; prod/single-port uses caddy on :8080 (Caddyfile reverse_proxy).
 # For full podman prod: podman-compose up -d backend caddy (backend sqlite at /app/data/waste.db, volume sqlite_data).
-if grep -q "caddy:" podman-compose.yml 2>/dev/null; then
+if grep -q "caddy:" "$COMPOSE_FILE" 2>/dev/null; then
   if [[ -n "$COMPOSE" ]]; then
     info "Starting Caddy (single-port :8080) via $COMPOSE..."
     if $COMPOSE up -d caddy 2>&1 | tail -n 20; then
@@ -382,16 +390,16 @@ if grep -q "caddy:" podman-compose.yml 2>/dev/null; then
     info "  To run single-port prod: podman-compose up -d backend caddy  (or '$COMPOSE up -d caddy' alongside venv)"
   fi
 else
-  info "No caddy service in podman-compose.yml — skipping single-port"
+  info "No caddy service in $COMPOSE_FILE — skipping single-port"
 fi
 
 # ---------- 7. summary & wait ----------
 bold "All services started!"
 echo "  Backend : http://127.0.0.1:8000  (health http://127.0.0.1:8000/health, docs http://127.0.0.1:8000/docs)"
 echo "  Unified Portal (vite proxy) : http://127.0.0.1:5173  (all roles via single login; VITE_API_URL='${VITE_API_URL:-}' → fetch('/auth/login') via vite proxy)"
-if grep -q "caddy:" podman-compose.yml 2>/dev/null && [[ -n "$COMPOSE" ]] && $COMPOSE ps 2>/dev/null | grep -q "waste-caddy"; then
+if grep -q "caddy:" "$COMPOSE_FILE" 2>/dev/null && [[ -n "$COMPOSE" ]] && $COMPOSE ps 2>/dev/null | grep -q "waste-caddy"; then
   echo "  Caddy (single-port) : http://127.0.0.1:8080  (Caddyfile reverse_proxy to backend:8000 + host.docker.internal:5173)"
-elif grep -q "caddy:" podman-compose.yml 2>/dev/null; then
+elif grep -q "caddy:" "$COMPOSE_FILE" 2>/dev/null; then
   echo "  Caddy (single-port) : not running — start with: $COMPOSE up -d caddy  → http://127.0.0.1:8080"
 fi
 if [[ "$MODE" == "postgres" ]]; then
@@ -425,9 +433,9 @@ cleanup() {
   # caddy + postgres are podman containers — intentionally left running (single-port :8080, volumes persist)
   # to stop them: podman-compose down   (or: podman stop waste-caddy waste-postgres)
   # volumes sqlite_data + upload_data persist across restarts (podman volume ls)
-  if grep -q "caddy:" podman-compose.yml 2>/dev/null && [[ -n "$COMPOSE" ]] && $COMPOSE ps 2>/dev/null | grep -q "waste-caddy"; then
+  if grep -q "caddy:" "$COMPOSE_FILE" 2>/dev/null && [[ -n "$COMPOSE" ]] && $COMPOSE ps 2>/dev/null | grep -q "waste-caddy"; then
     ok "Backend/portal stopped. Caddy still running on :8080 (use '$COMPOSE down' to stop; volume sqlite_data persists)."
-  elif [[ "$MODE" == "postgres" ]] && grep -q "postgres:" podman-compose.yml 2>/dev/null && $COMPOSE ps 2>/dev/null | grep -q "waste-postgres"; then
+  elif [[ "$MODE" == "postgres" ]] && grep -q "postgres:" "$COMPOSE_FILE" 2>/dev/null && $COMPOSE ps 2>/dev/null | grep -q "waste-postgres"; then
     ok "Backend/portal stopped. Postgres still running (use '$COMPOSE down' or 'podman stop waste-postgres'; volume persists)."
   else
     ok "Backend/portal stopped. Podman volumes sqlite_data + upload_data persist (use '$COMPOSE down -v' to wipe)."

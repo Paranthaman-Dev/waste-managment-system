@@ -29,6 +29,13 @@ class UserCreate(BaseModel):
     phone: Optional[str] = None
     role: UserRole = UserRole.USER
 
+    @field_validator("role", mode="before")
+    @classmethod
+    def _lower_role(cls, v):
+        if isinstance(v, str):
+            return v.lower()
+        return v
+
 class UserLogin(BaseModel):
     username: str
     password: str
@@ -52,6 +59,13 @@ class UserUpdate(BaseModel):
     is_active: Optional[bool] = None
     role: Optional[UserRole] = None
     username: Optional[str] = None
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _lower_role(cls, v):
+        if isinstance(v, str):
+            return v.lower()
+        return v
 
 class Token(BaseModel):
     access_token: str
@@ -90,6 +104,13 @@ class RecyclerResponse(BaseModel):
     accepted_waste_types: Optional[List[str]] = None
     capacity_kg: float
     rating: float
+
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
 
 class RecyclerUpdate(BaseModel):
     accepted_waste_types: Optional[List[str]] = None
@@ -167,8 +188,15 @@ class PublicBinCreate(BaseModel):
     name: str
     latitude: float
     longitude: float
-    accepted_waste_types: Optional[List[str]] = None
+    accepted_waste_types: Optional[List[str]] = Field(default_factory=list)
     capacity_kg: float = 0.0
+
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
 
 class PublicBinResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -182,12 +210,26 @@ class PublicBinResponse(BaseModel):
     created_at: datetime
     updated_at: datetime
 
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
+
 class PublicBinUpdate(BaseModel):
     name: Optional[str] = None
     latitude: Optional[float] = None
     longitude: Optional[float] = None
     accepted_waste_types: Optional[List[str]] = None
     capacity_kg: Optional[float] = None
+
+    @field_validator("accepted_waste_types", mode="before")
+    @classmethod
+    def _coerce_waste_types(cls, v):
+        if v is None:
+            return []
+        return v
 
 # -------------------------------------------------------------------
 # Audit & Report
@@ -242,7 +284,6 @@ class RewardLedgerResponse(BaseModel):
     weight_kg: float
     points: int
     created_at: datetime
-
 class VoucherCreate(BaseModel):
     title: str = Field(min_length=1, max_length=120)
     description: str = ""
@@ -254,9 +295,13 @@ class VoucherCreate(BaseModel):
     @field_validator("valid_until")
     @classmethod
     def validate_valid_until(cls, v: Optional[datetime]) -> Optional[datetime]:
-        if v is not None and v < datetime.now(timezone.utc).replace(tzinfo=None):
-            raise ValueError("valid_until must be in the future")
+        if v is not None:
+            # Handle both naive and aware datetimes: normalize to aware UTC for comparison
+            v_aware = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+            if v_aware < datetime.now(timezone.utc):
+                raise ValueError("valid_until must be in the future")
         return v
+
 
 class VoucherUpdate(BaseModel):
     title: Optional[str] = Field(default=None, min_length=1, max_length=120)
@@ -268,8 +313,10 @@ class VoucherUpdate(BaseModel):
     @field_validator("valid_until")
     @classmethod
     def validate_valid_until(cls, v: Optional[datetime]) -> Optional[datetime]:
-        if v is not None and v < datetime.now(timezone.utc).replace(tzinfo=None):
-            raise ValueError("valid_until must be in the future")
+        if v is not None:
+            v_aware = v if v.tzinfo is not None else v.replace(tzinfo=timezone.utc)
+            if v_aware < datetime.now(timezone.utc):
+                raise ValueError("valid_until must be in the future")
         return v
 
 class VoucherResponse(BaseModel):

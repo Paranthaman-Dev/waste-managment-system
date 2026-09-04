@@ -1,6 +1,5 @@
-import React, { FormEvent, useEffect, useState } from 'react';
+import React, { FormEvent, useEffect, useState, Suspense } from 'react';
 import {
-  BinMap,
   Button,
   Input,
   Select,
@@ -17,7 +16,7 @@ import {
   Switch,
   SkeletonKPI,
   SkeletonTable,
-  DonutChart,
+  SkeletonMap,
   useAuth,
   useToast,
   useRouter,
@@ -40,6 +39,57 @@ import {
   Gift,
 } from 'lucide-react';
 import { VouchersSection } from './VouchersSection';
+
+// True lazy for heavy deps — leaflet + charts split per vite.config
+const LazyBinMap = React.lazy(() => import('@wm/shared/BinMap').then((m) => ({ default: m.BinMap })));
+const LazyDonutChart = React.lazy(() => import('@wm/shared/charts').then((m) => ({ default: m.DonutChart })));
+
+class ErrorBoundary extends React.Component<{ children: React.ReactNode; fallback?: React.ReactNode }, { hasError: boolean; error?: Error }> {
+  state: { hasError: boolean; error?: Error } = { hasError: false, error: undefined };
+  static getDerivedStateFromError(error: Error) { return { hasError: true, error }; }
+  componentDidCatch(error: Error, info: React.ErrorInfo) { console.error('ErrorBoundary caught:', error, info); }
+  render() {
+    if (this.state.hasError) {
+      return this.props.fallback ?? (
+        <div className="p-6 text-center" role="alert">
+          <p className="text-sm font-medium text-destructive">Something went wrong loading this section.</p>
+          {this.state.error?.message && <p className="text-xs text-muted-foreground mt-1">{this.state.error.message}</p>}
+          <button type="button" onClick={() => this.setState({ hasError: false, error: undefined })} className="mt-3 inline-flex items-center rounded-md border border-border bg-surface px-3 py-1 text-xs font-medium hover:bg-surface-muted">Try again</button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// Extracted row components — deduplicate repetitive list JSX
+function UserRow({
+  u,
+  onEdit,
+  onDelete,
+}: {
+  u: User;
+  onEdit: (u: User) => void;
+  onDelete: (id: number) => void;
+}) {
+  const roleTone = u.role === 'management' ? 'info' : u.role === 'collector' ? 'amber' : u.role === 'recycler' ? 'sage' : 'neutral';
+  return (
+    <div className="rounded-[12px] border border-border bg-surface p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
+      <div className="space-y-0.5">
+        <div className="flex items-center gap-2">
+          <span className="font-bold text-xs text-foreground">{u.username}</span>
+          <Badge tone={roleTone as any} dot>{u.role === 'management' ? 'Admin' : u.role}</Badge>
+          {!u.is_active && <Badge tone="error">Deactivated</Badge>}
+        </div>
+        <p className="text-[11px] text-muted-foreground">{u.email} {u.phone && `• ${u.phone}`} • Joined {new Date(u.created_at).toLocaleDateString()}</p>
+      </div>
+      <div className="flex items-center gap-1.5">
+        <Button variant="outline" size="sm" onClick={() => onEdit(u)}><Edit2 className="h-3 w-3 mr-1" /> Edit</Button>
+        <Button variant="ghost" size="sm" onClick={() => onDelete(u.id)} className="text-red-600 hover:bg-red-50"><Trash2 className="h-3 w-3" /></Button>
+      </div>
+    </div>
+  );
+}
 
 interface Collector {
   id: number;
@@ -205,7 +255,7 @@ export function ManagementDashboard() {
         name: bin.name,
         latitude: bin.latitude,
         longitude: bin.longitude,
-        accepted_waste_types: bin.accepted_waste_types.join(', '),
+        accepted_waste_types: (bin.accepted_waste_types ?? []).join(', '),
         capacity_kg: bin.capacity_kg,
       });
     } else {
@@ -428,16 +478,13 @@ export function ManagementDashboard() {
               </CardHeader>
 
               {donutData.length > 0 ? (
-                <DonutChart
-                  data={donutData}
-                  centerValue={`${summary?.total_waste_kg ?? 0} kg`}
-                  centerLabel="Total Diverted"
-                />
+                <ErrorBoundary>
+                  <Suspense fallback={<SkeletonMap height={200} />}>
+                    <LazyDonutChart data={donutData} centerValue={`${summary?.total_waste_kg ?? 0} kg`} centerLabel="Total Diverted" />
+                  </Suspense>
+                </ErrorBoundary>
               ) : (
-                <EmptyState
-                  title="No waste collected yet"
-                  description="As pickups are completed across the city, stream analytics will appear."
-                />
+                <EmptyState title="No waste collected yet" description="As pickups are completed across the city, stream analytics will appear." />
               )}
             </Card>
 
@@ -595,7 +642,7 @@ export function ManagementDashboard() {
                         {b.latitude.toFixed(4)}, {b.longitude.toFixed(4)} • {b.capacity_kg} kg
                       </p>
                     </div>
-                    <Badge tone="sage">{b.accepted_waste_types.length} Streams</Badge>
+                    <Badge tone="sage">{(b.accepted_waste_types ?? []).length} Streams</Badge>
                   </button>
                 ))}
               </div>
@@ -603,15 +650,21 @@ export function ManagementDashboard() {
           </Card>
 
           <Card className="p-0 overflow-hidden">
-            <BinMap
-              bins={bins}
-              editable
-              height={560}
-              selectedBinId={selectedBin?.id}
-              onPick={(lat, lng) => setBinForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
-              onDrag={dragBinToNewLocation}
-              onSelectBin={selectBinForEditing}
-            />
+            <ErrorBoundary>
+              <Suspense fallback={<SkeletonMap height={560} />}>
+                <LazyBinMap
+                  bins={bins}
+                  editable
+                  height={560}
+                  selectedBinId={selectedBin?.id}
+                  onPick={(lat, lng) => setBinForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
+                  onDrag={dragBinToNewLocation}
+                  onSelectBin={selectBinForEditing}
+                  pickupPin={!selectedBin ? [binForm.latitude, binForm.longitude] : null}
+                  onPickupDrag={(lat, lng) => setBinForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
+                />
+              </Suspense>
+            </ErrorBoundary>
           </Card>
         </div>
       )}
@@ -731,52 +784,18 @@ export function ManagementDashboard() {
             ) : (
               <>
                 <div className="space-y-1.5">
-                  {filteredUsers.map((u) => {
-                    const roleTone =
-                      u.role === 'management' ? 'info' : u.role === 'collector' ? 'amber' : u.role === 'recycler' ? 'sage' : 'neutral';
-
-                    return (
-                      <div
-                        key={u.id}
-                        className="rounded-[12px] border border-border bg-surface p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5"
-                      >
-                        <div className="space-y-0.5">
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold text-xs text-foreground">{u.username}</span>
-                            <Badge tone={roleTone} dot>
-                              {u.role === 'management' ? 'Admin' : u.role}
-                            </Badge>
-                            {!u.is_active && <Badge tone="error">Deactivated</Badge>}
-                          </div>
-                          <p className="text-[11px] text-muted-foreground">
-                            {u.email} {u.phone && `• ${u.phone}`} • Joined {new Date(u.created_at).toLocaleDateString()}
-                          </p>
-                        </div>
-
-                        <div className="flex items-center gap-1.5">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => {
-                              setEditingUser(u);
-                              setEditPhone(u.phone ?? '');
-                              setEditActive(u.is_active);
-                            }}
-                          >
-                            <Edit2 className="h-3 w-3 mr-1" /> Edit
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => deleteUser(u.id)}
-                            className="text-red-600 hover:bg-red-50"
-                          >
-                            <Trash2 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    );
-                  })}
+                  {filteredUsers.map((u) => (
+                    <UserRow
+                      key={u.id}
+                      u={u}
+                      onEdit={(usr) => {
+                        setEditingUser(usr);
+                        setEditPhone(usr.phone ?? '');
+                        setEditActive(usr.is_active);
+                      }}
+                      onDelete={deleteUser}
+                    />
+                  ))}
                 </div>
 
                 <Pagination page={userPage} totalPages={Math.ceil(userTotal / 10) || 1} onPageChange={setUserPage} />

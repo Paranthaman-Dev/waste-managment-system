@@ -26,7 +26,7 @@ import type { RewardBalance, RewardRates, RewardLedger, Voucher, RewardRedemptio
 import { Gift, History, Sparkles } from 'lucide-react';
 
 export function RewardsSection() {
-  const { token } = useAuth();
+  const { token, role } = useAuth();
   const { success, error: toastError } = useToast();
 
   const [balance, setBalance] = useState<RewardBalance | null>(null);
@@ -43,22 +43,65 @@ export function RewardsSection() {
 
   async function loadRewards() {
     if (!token) return;
+    // Only residents have balance/history/voucher redemption; other roles see rates only
+    if (role && role !== 'user') {
+      setLoading(true);
+      setError('');
+      try {
+        const rate = await getRewardRates(token);
+        setRates(rate);
+      } catch (e) {
+        toastError('Load Error', e instanceof Error ? e.message : 'Could not load reward rates.');
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      const [bal, rate, hist, voc, red] = await Promise.all([
+      // Fetch each resource independently so one 403/422 doesn't wipe the whole dashboard.
+      // getRewardRates is public (any role) and should never block voucher/history.
+      const results = await Promise.allSettled([
         getRewardBalance(token),
         getRewardRates(token),
         getRewardHistory(token, { page, page_size: 10 }),
         getVouchers(token),
         getMyRedemptions(token),
       ]);
-      setBalance(bal);
-      setRates(rate);
-      setHistory(hist.items);
-      setHistoryTotal(hist.total);
-      setVouchers(voc);
-      setRedemptions(red);
+      const [balR, rateR, histR, vocR, redR] = results;
+      if (balR.status === 'fulfilled') setBalance(balR.value);
+      else {
+        const msg = balR.reason instanceof Error ? balR.reason.message : String(balR.reason);
+        // 403 means not resident – don't show ErrorState, just toast
+        if (msg.includes('403') || msg.includes('Not enough permissions')) toastError('Balance unavailable', msg);
+        else setError(msg || 'Could not load balance.');
+      }
+      if (rateR.status === 'fulfilled') setRates(rateR.value);
+      else toastError('Rates unavailable', rateR.reason instanceof Error ? rateR.reason.message : String(rateR.reason));
+      if (histR.status === 'fulfilled') {
+        setHistory(histR.value.items);
+        setHistoryTotal(histR.value.total);
+      } else if (histR.status === 'rejected') {
+        const m = histR.reason instanceof Error ? histR.reason.message : String(histR.reason);
+        if (!m.includes('403')) setError(m);
+      }
+      if (vocR.status === 'fulfilled') setVouchers(vocR.value);
+      else {
+        const m = vocR.reason instanceof Error ? vocR.reason.message : String(vocR.reason);
+        // 403 here would mean token is management trying to use resident endpoint – surface as toast not crash
+        if (m.includes('403') || m.includes('Not enough permissions')) toastError('Vouchers unavailable', m);
+        else toastError('Vouchers unavailable', m);
+        setVouchers([]);
+      }
+      if (redR.status === 'fulfilled') setRedemptions(redR.value);
+      else if (redR.status === 'rejected') {
+        const m = redR.reason instanceof Error ? redR.reason.message : String(redR.reason);
+        if (!m.includes('403')) toastError('Redemptions unavailable', m);
+      }
+      // if all rejected and no partial data, surface generic error
+      const anyOk = results.some((r) => r.status === 'fulfilled');
+      if (!anyOk) setError((results.find((r) => r.status === 'rejected') as PromiseRejectedResult)?.reason?.message ?? 'Could not load rewards.');
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not load rewards.');
     } finally {
@@ -69,7 +112,7 @@ export function RewardsSection() {
   useEffect(() => {
     loadRewards();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [page]);
+  }, [page, token, role]);
 
   async function confirmRedeem() {
     if (!token || !redeeming) return;
@@ -78,11 +121,17 @@ export function RewardsSection() {
       const red = await redeemVoucher(token, redeeming.id);
       success('Redeemed!', `${redeeming.title} (${
         typeof red.points_spent === 'number' ? red.points_spent : redeeming.cost_points
-      } pts) in queue for fulfilment.`);
+      } pts) queued for fulfilment.`);
       setRedeeming(null);
       await loadRewards();
     } catch (err) {
-      toastError('Redemption Failed', err instanceof Error ? err.message : 'Could not redeem voucher.');
+      const raw = err instanceof Error ? err.message : 'Could not redeem voucher.';
+      // Map backend statuses to friendly copy without exposing raw 422/409
+      let friendly = raw;
+      if (raw.includes('Insufficient')) friendly = raw; // already friendly from backend 409
+      else if (raw.includes('expired') || raw.includes('no longer active')) friendly = 'This voucher is no longer available.';
+      else if (raw.includes('422')) friendly = 'Invalid request – please refresh and try again.';
+      toastError('Redemption Failed', friendly);
     } finally {
       setRedeemingId(null);
     }

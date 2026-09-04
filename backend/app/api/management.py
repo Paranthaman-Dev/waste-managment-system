@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Query
-from sqlmodel import select, func
+from sqlmodel import select, func, delete, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 from datetime import datetime, timezone, date
@@ -12,7 +12,7 @@ from app.core.config import get_settings
 from app.models import (
     User, Collector, Recycler, PickupRequest, WasteBatch,
     PublicBin, AuditLog, Report, UserRole, PickupStatus, BatchStatus,
-    RewardLedger, Redemption
+    RewardLedger, RewardBalance, Voucher, Redemption
 )
 from app.schemas import (
     UserCreate, UserResponse, UserUpdate, CollectorResponse, CollectorUpdate,
@@ -212,6 +212,35 @@ async def delete_user(
             detail="User not found"
         )
     
+    # Project-only: clean up FK children that would violate NOT NULL on delete
+    # 1) Remember collector/recycler ids to nullify references before deleting profiles
+    collector_ids_res = await db.execute(select(Collector.id).where(Collector.user_id == user_id))
+    collector_ids = [r[0] for r in collector_ids_res.all()]
+    if collector_ids:
+        await db.execute(update(PickupRequest).where(PickupRequest.collector_id.in_(collector_ids)).values(collector_id=None))
+    recycler_ids_res = await db.execute(select(Recycler.id).where(Recycler.user_id == user_id))
+    recycler_ids = [r[0] for r in recycler_ids_res.all()]
+    if recycler_ids:
+        await db.execute(update(WasteBatch).where(WasteBatch.recycler_id.in_(recycler_ids)).values(recycler_id=None))
+    # 2) Delete profiles themselves (1:1 NOT NULL)
+    await db.execute(delete(Collector).where(Collector.user_id == user_id))
+    await db.execute(delete(Recycler).where(Recycler.user_id == user_id))
+    # 3) User-owned history (project: delete to unblock; in prod would block or anonymize)
+    await db.execute(delete(RewardLedger).where(RewardLedger.user_id == user_id))
+    await db.execute(delete(RewardBalance).where(RewardBalance.user_id == user_id))
+    await db.execute(delete(Redemption).where(Redemption.user_id == user_id))
+    await db.execute(delete(AuditLog).where(AuditLog.actor_user_id == user_id))
+    await db.execute(delete(Report).where(Report.generated_by == user_id))
+    await db.execute(delete(Voucher).where(Voucher.created_by == user_id))
+    await db.execute(delete(PublicBin).where(PublicBin.created_by == user_id))
+    # Pickups owned by resident — delete their batches first then pickups
+    pickup_ids_res = await db.execute(select(PickupRequest.id).where(PickupRequest.user_id == user_id))
+    pickup_ids = [r[0] for r in pickup_ids_res.all()]
+    if pickup_ids:
+        await db.execute(delete(RewardLedger).where(RewardLedger.pickup_id.in_(pickup_ids)))
+        await db.execute(delete(WasteBatch).where(WasteBatch.pickup_request_id.in_(pickup_ids)))
+        await db.execute(delete(PickupRequest).where(PickupRequest.id.in_(pickup_ids)))
+    await db.flush()
     await db.delete(user)
     await db.commit()
     return {"message": "User deleted"}
@@ -318,9 +347,13 @@ async def list_recyclers(
     query = query.offset((page - 1) * page_size).limit(page_size)
     result = await db.execute(query)
     recyclers = result.scalars().all()
+    # Ensure accepted_waste_types never serializes as null (defensive for legacy rows)
+    for r in recyclers:
+        if r.accepted_waste_types is None:
+            r.accepted_waste_types = []
     
     return PaginatedResponse(
-        items=recyclers,
+        items=[RecyclerResponse.model_validate(r) for r in recyclers],
         total=total,
         page=page,
         page_size=page_size,
@@ -500,67 +533,122 @@ async def generate_report(
     current_user: User = Depends(require_management),
     db: AsyncSession = Depends(get_db)
 ):
-    upload_dir = Path(settings.UPLOAD_DIR) / "reports"
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    
-    filename = f"{report_type}_{uuid.uuid4().hex[:8]}.csv"
-    file_path = upload_dir / filename
-    
-    if report_type == "users":
-        result = await db.execute(select(User))
-        users = result.scalars().all()
-        
-        with open(file_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["ID", "Username", "Email", "Role", "Phone", "Created At", "Is Active"])
-            for u in users:
-                writer.writerow([u.id, u.username, u.email, u.role.value, u.phone, u.created_at, u.is_active])
-    
-    elif report_type == "pickups":
-        query = select(PickupRequest)
-        if date_from:
-            query = query.where(PickupRequest.requested_at >= datetime.combine(date_from, datetime.min.time()))
-        if date_to:
-            query = query.where(PickupRequest.requested_at <= datetime.combine(date_to, datetime.max.time()))
-        result = await db.execute(query)
-        pickups = result.scalars().all()
-        
-        with open(file_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["ID", "User ID", "Collector ID", "Waste Type", "Quantity (kg)", "Location", "Status", "Requested At", "Collected At"])
-            for p in pickups:
-                writer.writerow([p.id, p.user_id, p.collector_id, p.waste_type, p.quantity_kg, p.location, p.status.value, p.requested_at, p.collected_at])
-    
-    elif report_type == "batches":
-        query = select(WasteBatch)
-        if date_from:
-            query = query.where(WasteBatch.handed_over_at >= datetime.combine(date_from, datetime.min.time()))
-        if date_to:
-            query = query.where(WasteBatch.handed_over_at <= datetime.combine(date_to, datetime.max.time()))
-        result = await db.execute(query)
-        batches = result.scalars().all()
-        
-        with open(file_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["ID", "Pickup Request ID", "Recycler ID", "Status", "Handed Over At", "Processed At", "Proof URL"])
-            for b in batches:
-                writer.writerow([b.id, b.pickup_request_id, b.recycler_id, b.status.value, b.handed_over_at, b.processed_at, b.proof_url])
-    
-    elif report_type == "bins":
-        result = await db.execute(select(PublicBin))
-        bins = result.scalars().all()
-        
-        with open(file_path, "w", newline="") as f:
-            writer = csv.writer(f)
-            writer.writerow(["ID", "Name", "Latitude", "Longitude", "Accepted Waste Types", "Capacity (kg)", "Created By", "Created At"])
-            for b in bins:
-                writer.writerow([b.id, b.name, b.latitude, b.longitude, ",".join(b.accepted_waste_types), b.capacity_kg, b.created_by, b.created_at])
-    
-    else:
+    # validate before touching FS
+    allowed = {"users", "pickups", "batches", "bins", "rewards", "vouchers", "redemptions"}
+    if report_type not in allowed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unknown report type: {report_type}"
+            detail=f"Unknown report type: {report_type}. Allowed: {', '.join(sorted(allowed))}"
         )
+    try:
+        upload_dir = Path(settings.UPLOAD_DIR) / "reports"
+        upload_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Cannot create reports dir: {e}")
+
+    filename = f"{report_type}_{uuid.uuid4().hex[:8]}.csv"
+    file_path = upload_dir / filename
+
+    def _iso(dt):
+        return dt.isoformat() if dt else ""
+
+    try:
+        if report_type == "users":
+            result = await db.execute(select(User))
+            users = result.scalars().all()
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+                writer.writerow(["ID", "Username", "Email", "Role", "Phone", "Created At", "Is Active"])
+                for u in users:
+                    writer.writerow([u.id, u.username, u.email, u.role.value, u.phone, _iso(u.created_at), u.is_active])
+
+        elif report_type == "pickups":
+            query = select(PickupRequest)
+            if date_from:
+                query = query.where(PickupRequest.requested_at >= datetime.combine(date_from, datetime.min.time()))
+            if date_to:
+                query = query.where(PickupRequest.requested_at <= datetime.combine(date_to, datetime.max.time()))
+            result = await db.execute(query)
+            pickups = result.scalars().all()
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+                writer.writerow(["ID", "User ID", "Collector ID", "Waste Type", "Quantity (kg)", "Location", "Status", "Requested At", "Collected At"])
+                for p in pickups:
+                    writer.writerow([p.id, p.user_id, p.collector_id, p.waste_type, p.quantity_kg, p.location, p.status.value, _iso(p.requested_at), _iso(p.collected_at)])
+
+        elif report_type == "batches":
+            query = select(WasteBatch)
+            if date_from:
+                query = query.where(WasteBatch.handed_over_at >= datetime.combine(date_from, datetime.min.time()))
+            if date_to:
+                query = query.where(WasteBatch.handed_over_at <= datetime.combine(date_to, datetime.max.time()))
+            result = await db.execute(query)
+            batches = result.scalars().all()
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+                writer.writerow(["ID", "Pickup Request ID", "Recycler ID", "Status", "Handed Over At", "Processed At", "Proof URL"])
+                for b in batches:
+                    writer.writerow([b.id, b.pickup_request_id, b.recycler_id, b.status.value, _iso(b.handed_over_at), _iso(b.processed_at), b.proof_url or ""])
+
+        elif report_type == "bins":
+            result = await db.execute(select(PublicBin))
+            bins = result.scalars().all()
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+                writer.writerow(["ID", "Name", "Latitude", "Longitude", "Accepted Waste Types", "Capacity (kg)", "Created By", "Created At"])
+                for b in bins:
+                    writer.writerow([b.id, b.name, b.latitude, b.longitude, ",".join(b.accepted_waste_types or []), b.capacity_kg, b.created_by, _iso(b.created_at)])
+
+        elif report_type == "rewards":
+            from app.models import RewardLedger
+
+            result = await db.execute(select(RewardLedger).order_by(RewardLedger.created_at.desc()))
+            rows = result.scalars().all()
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+                writer.writerow(["ID", "User ID", "Pickup ID", "Batch ID", "Waste Type", "Weight (kg)", "Points", "Created At"])
+                for r in rows:
+                    writer.writerow([r.id, r.user_id, r.pickup_id, r.batch_id, r.waste_type, r.weight_kg, r.points, _iso(r.created_at)])
+
+        elif report_type == "vouchers":
+            from app.models import Voucher
+
+            result = await db.execute(select(Voucher).order_by(Voucher.created_at.desc()))
+            rows = result.scalars().all()
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+                writer.writerow(["ID", "Title", "Description", "Cost Points", "Active", "Valid Until", "Created By", "Created At"])
+                for v in rows:
+                    writer.writerow([v.id, v.title, v.description, v.cost_points, v.active, _iso(v.valid_until), v.created_by, _iso(v.created_at)])
+
+        elif report_type == "redemptions":
+            from app.models import Redemption, Voucher
+            from sqlalchemy.orm import selectinload
+
+            result = await db.execute(select(Redemption).options(selectinload(Redemption.voucher), selectinload(Redemption.user)).order_by(Redemption.redeemed_at.desc()))
+            rows = result.scalars().all()
+            with open(file_path, "w", newline="", encoding="utf-8-sig") as f:
+                writer = csv.writer(f, quoting=csv.QUOTE_MINIMAL, lineterminator="\n")
+                writer.writerow(["ID", "User ID", "Username", "Voucher ID", "Voucher Title", "Points Spent", "Status", "Redeemed At"])
+                for r in rows:
+                    vtitle = r.voucher.title if r.voucher else ""
+                    uname = r.user.username if r.user else ""
+                    writer.writerow([r.id, r.user_id, uname, r.voucher_id, vtitle, r.points_spent, r.status.value if hasattr(r.status, "value") else r.status, _iso(r.redeemed_at)])
+    except HTTPException:
+        # clean up empty file on known error
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except OSError:
+            pass
+        raise
+    except Exception as e:
+        try:
+            if file_path.exists():
+                file_path.unlink()
+        except OSError:
+            pass
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Report generation failed: {e}")
     
     report = Report(
         generated_by=current_user.id,

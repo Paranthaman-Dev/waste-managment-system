@@ -103,11 +103,14 @@ async def redeem_voucher(db: AsyncSession, user_id: int, voucher_id: int) -> Red
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Voucher not found or no longer active",
         )
-    if voucher.valid_until is not None and voucher.valid_until < datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Voucher has expired",
-        )
+    if voucher.valid_until is not None:
+        vu = voucher.valid_until
+        vu_aware = vu if vu.tzinfo is not None else vu.replace(tzinfo=timezone.utc)
+        if vu_aware < datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Voucher has expired",
+            )
 
     cost = int(voucher.cost_points)
     if balance.balance < cost:

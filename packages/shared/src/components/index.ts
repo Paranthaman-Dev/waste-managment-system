@@ -7,3 +7,4 @@ export * from './layout/AppShell';
 export * from './auth/AuthPage';
 export * from './rewards/RewardCard';
 export * from './rewards/VoucherTile';
+export * from './pickup/PickupCard';

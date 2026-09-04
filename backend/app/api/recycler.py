@@ -280,9 +280,20 @@ async def upload_proof(
     
     batch.proof_url = f"/uploads/proofs/{filename}"
     
-    if batch.status == BatchStatus.PROCESSING:
+    # Mass Recycled KPI fix: allow ACCEPTED/REQUESTED to complete on proof upload
+    # (previously only PROCESSING → COMPLETED, so KPI always showed 0 kg)
+    if batch.status != BatchStatus.COMPLETED:
         batch.status = BatchStatus.COMPLETED
         batch.processed_at = datetime.now(timezone.utc)
+        # award resident points idempotently when recycling completes
+        from app.services.rewards import award_points_for_pickup
+        presult = await db.execute(select(PickupRequest).where(PickupRequest.id == batch.pickup_request_id))
+        pickup = presult.scalar_one_or_none()
+        if pickup is not None:
+            try:
+                await award_points_for_pickup(db, pickup, batch_id=batch.id)
+            except Exception:
+                pass
     
     await db.commit()
     await db.refresh(batch)

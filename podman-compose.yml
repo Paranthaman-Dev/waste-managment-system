@@ -4,24 +4,41 @@ services:
       context: ./backend
       dockerfile: Containerfile
     container_name: waste-backend
+    env_file:
+      - .env
     environment:
       DATABASE_URL: sqlite+aiosqlite:////app/data/waste.db
-      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-in-production}
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-supersecretkey}
       JWT_ALGORITHM: ${JWT_ALGORITHM:-HS256}
       ACCESS_TOKEN_EXPIRE_MINUTES: ${ACCESS_TOKEN_EXPIRE_MINUTES:-30}
       REFRESH_TOKEN_EXPIRE_DAYS: ${REFRESH_TOKEN_EXPIRE_DAYS:-7}
       UPLOAD_DIR: /app/uploads
       PYTHONPATH: /app
     volumes:
-      - ./backend:/app
-      - upload_data:/app/uploads
       - sqlite_data:/app/data
+      - upload_data:/app/uploads
     ports:
       - "8000:8000"
     expose:
       - "8000"
-    command: >
-      sh -c "mkdir -p /app/data && python -m alembic -c alembic.ini upgrade head && python -m app.db.seed && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+    command: sh -c "mkdir -p /app/data && python -m alembic -c alembic.ini upgrade head && python -m app.db.seed_demo && uvicorn app.main:app --host 0.0.0.0 --port 8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: waste-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    expose:
+      - "80"
 
   caddy:
     image: docker.io/library/caddy:2-alpine
@@ -35,6 +52,7 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       - backend
+      - frontend
 
 volumes:
   sqlite_data:

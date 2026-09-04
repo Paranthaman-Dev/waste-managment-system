@@ -13,6 +13,28 @@ export default defineConfig({
       },
     ],
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: (id) => {
+          // Core React libraries – shared by every chunk
+          if (id.includes('node_modules/react') || id.includes('node_modules/react-dom')) {
+            return 'react-vendor';
+          }
+          // Leaflet (maps) – only needed when a map component loads
+          if (id.includes('node_modules/leaflet') || id.includes('node_modules/react-leaflet')) {
+            return 'leaflet';
+          }
+          // Charting utilities – used in dashboards but not on initial load
+          if (id.includes('@wm/shared/charts')) {
+            return 'charts';
+          }
+        },
+      },
+    },
+    // Raise the warning limit; we intentionally split into many chunks
+    chunkSizeWarningLimit: 600,
+  },
   server: {
     host: '0.0.0.0',
     port: 5173,

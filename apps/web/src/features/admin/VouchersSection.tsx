@@ -53,15 +53,35 @@ export function VouchersSection() {
     if (!token) return;
     setLoading(true);
     try {
-      const [v, r] = await Promise.all([
+      const results = await Promise.allSettled([
         getAllVouchers(token),
         getRedemptions(token, { page: redPage, page_size: 12 }),
       ]);
-      setVouchers(v);
-      setRedemptions(r.items);
-      setRedTotal(r.total);
+      const [vR, rR] = results;
+      if (vR.status === 'fulfilled') setVouchers(vR.value);
+      else {
+        const msg = vR.reason instanceof Error ? vR.reason.message : String(vR.reason);
+        if (msg.includes('403') || msg.includes('Not enough permissions')) {
+          toastError('Vouchers forbidden', 'Management access required – please re-login as admin.');
+        } else toastError('Load Error', msg);
+        setVouchers([]);
+      }
+      if (rR.status === 'fulfilled') {
+        setRedemptions(rR.value.items);
+        setRedTotal(rR.value.total);
+      } else {
+        const msg = rR.reason instanceof Error ? rR.reason.message : String(rR.reason);
+        toastError('Redemptions Error', msg);
+        setRedemptions([]);
+        setRedTotal(0);
+      }
+      const anyOk = results.some((r) => r.status === 'fulfilled');
+      if (!anyOk) throw new Error('Both voucher queries failed');
     } catch (e) {
-      toastError('Load Error', e instanceof Error ? e.message : 'Could not load vouchers.');
+      // final catch already handled per-resource; keep generic fallback
+      if (e instanceof Error && e.message === 'Both voucher queries failed') {
+        // already toasted
+      } else toastError('Load Error', e instanceof Error ? e.message : 'Could not load vouchers.');
     } finally {
       setLoading(false);
     }
@@ -70,7 +90,7 @@ export function VouchersSection() {
   useEffect(() => {
     loadData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [redPage]);
+  }, [redPage, token]);
 
   function openNew() {
     setEditing(null);
@@ -99,13 +119,20 @@ export function VouchersSection() {
     e.preventDefault();
     if (!token) return;
     if (!form.title.trim()) return toastError('Validation Error', 'Voucher title is required.');
-    if (form.cost_points <= 0) return toastError('Validation Error', 'Cost must be greater than 0 points.');
+    if (!Number.isFinite(form.cost_points) || form.cost_points <= 0) return toastError('Validation Error', 'Cost must be greater than 0 points.');
+    if (form.valid_until) {
+      const picked = new Date(form.valid_until);
+      if (!Number.isNaN(picked.getTime()) && picked.getTime() <= Date.now()) {
+        return toastError('Validation Error', 'Valid-until must be in the future.');
+      }
+      if (Number.isNaN(picked.getTime())) return toastError('Validation Error', 'Invalid date format.');
+    }
 
     setSaving(true);
-    const payload = {
+    const payload: Record<string, unknown> = {
       title: form.title.trim(),
       description: form.description.trim(),
-      cost_points: form.cost_points,
+      cost_points: Math.floor(form.cost_points),
       active: form.active,
       valid_until: form.valid_until ? new Date(form.valid_until).toISOString() : null,
     };
@@ -123,7 +150,12 @@ export function VouchersSection() {
       setForm(EMPTY_FORM);
       await loadData();
     } catch (err) {
-      toastError('Save Failed', err instanceof Error ? err.message : 'Could not save voucher.');
+      const raw = err instanceof Error ? err.message : 'Could not save voucher.';
+      let friendly = raw;
+      if (raw.includes('valid_until must be in the future')) friendly = 'Valid-until must be a future date/time.';
+      else if (raw.includes('422')) friendly = 'Validation failed – check title and cost.';
+      else if (raw.includes('403')) friendly = 'Management permission required.';
+      toastError('Save Failed', friendly);
     } finally {
       setSaving(false);
     }
@@ -146,10 +178,19 @@ export function VouchersSection() {
     setActing(r.id);
     try {
       await updateRedemptionStatus(token, r.id, status);
-      success(status === 'issued' ? 'Voucher Issued' : 'Redemption Cancelled', `Refunded ${r.points_spent} pts to user.`);
+      if (status === 'issued') {
+        success('Voucher Issued', `Voucher "${r.voucher_title ?? `#${r.voucher_id}`}" dispatched to ${r.username ?? `user #${r.user_id}`}.`);
+      } else {
+        success('Redemption Cancelled', `Refunded ${r.points_spent} pts to ${r.username ?? `user #${r.user_id}`}.`);
+      }
       await loadData();
     } catch (e) {
-      toastError('Update Failed', e instanceof Error ? e.message : 'Could not update redemption.');
+      const raw = e instanceof Error ? e.message : 'Could not update redemption.';
+      let friendly = raw;
+      if (raw.includes('already issued') || raw.includes('already cancelled')) friendly = raw;
+      else if (raw.includes('PENDING is the initial')) friendly = 'Cannot revert to pending.';
+      else if (raw.includes('422')) friendly = 'Invalid status – use issued or cancelled.';
+      toastError('Update Failed', friendly);
     } finally {
       setActing(null);
     }
