@@ -6,7 +6,7 @@ from sqlmodel import SQLModel, select, func
 from app.core.security import get_password_hash
 from app.db.session import AsyncSessionLocal, engine
 from app.core.config import calculate_points
-from app.models import User, UserRole, Collector, Recycler, PickupRequest, PickupStatus, WasteBatch, BatchStatus, Voucher, RewardLedger, RewardBalance
+from app.models import User, UserRole, Collector, Recycler, PickupRequest, PickupStatus, WasteBatch, BatchStatus, Voucher, RewardLedger, RewardBalance, PublicBin
 
 
 async def upsert_user(username: str, email: str, role: UserRole, password: str) -> User:
@@ -109,8 +109,33 @@ async def seed_demo_batches() -> None:
         # verify analytics
         total = (await db.execute(select(func.sum(PickupRequest.quantity_kg)).join(WasteBatch, WasteBatch.pickup_request_id == PickupRequest.id).where(WasteBatch.recycler_id == recycler.id, WasteBatch.status == BatchStatus.COMPLETED))).scalar() or 0
         print(f"  demo analytics total_kg_processed={total}")
+        # seed public bins so map shows network after wipe
+        await seed_public_bins()
         # seed rewards/vouchers so fresh DB has catalogue + balances
         await seed_rewards_and_vouchers()
+
+
+async def seed_public_bins() -> None:
+    """Seed 6 demo public bins across Chennai. Idempotent."""
+    async with AsyncSessionLocal() as db:
+        cnt = (await db.execute(select(func.count(PublicBin.id)))).scalar() or 0
+        if cnt > 0:
+            return
+        admin = (await db.execute(select(User).where(User.username == "admin"))).scalar_one_or_none()
+        if not admin:
+            return
+        bins = [
+            ("Marina Beach Bin 04", 13.0500, 80.2827, ["organic", "plastic"], 120),
+            ("T Nagar Hub", 13.0418, 80.2341, ["plastic", "e-waste"], 150),
+            ("Adyar Eco Station", 13.0067, 80.2570, ["organic", "metal"], 100),
+            ("Anna Nagar Depot", 13.0850, 80.2101, ["paper", "plastic", "glass"], 200),
+            ("Velachery Green Point", 12.9815, 80.2180, ["organic", "paper"], 80),
+            ("Guindy Industrial Yard", 13.0063, 80.2206, ["metal", "e-waste", "glass"], 250),
+        ]
+        for name, lat, lng, types, cap in bins:
+            db.add(PublicBin(name=name, latitude=lat, longitude=lng, accepted_waste_types=types, capacity_kg=cap, created_by=admin.id))
+        await db.commit()
+        print(f"  seeded {len(bins)} public bins")
 
 
 async def seed_rewards_and_vouchers() -> None:

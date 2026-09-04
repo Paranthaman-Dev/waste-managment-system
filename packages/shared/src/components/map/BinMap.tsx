@@ -25,6 +25,22 @@ function createCustomPin(color = '#10B981', isDraggable = false) {
   });
 }
 
+const pickupPinIcon = new L.DivIcon({
+  html: `
+    <div style="position:relative;width:36px;height:36px;display:flex;align-items:center;justify-content:center;filter:drop-shadow(0 3px 8px rgba(0,0,0,0.35));">
+      <div style="position:absolute;bottom:0;width:14px;height:14px;background:#FF4D00;transform:rotate(45deg);border-radius:0 0 3px 0;left:11px;"></div>
+      <div style="position:relative;width:30px;height:30px;background:#FF4D00;border:2.5px solid white;border-radius:50%;display:flex;align-items:center;justify-content:center;box-shadow:0 2px 8px rgba(0,0,0,0.3);">
+        <div style="width:10px;height:10px;background:white;border-radius:50%;box-shadow:inset 0 1px 2px rgba(0,0,0,0.2);"></div>
+      </div>
+      <div style="position:absolute;top:-6px;left:50%;transform:translateX(-50%);background:#111827;color:white;font-size:8px;font-weight:800;letter-spacing:0.06em;padding:2px 6px;border-radius:999px;white-space:nowrap;box-shadow:0 2px 6px rgba(0,0,0,0.25);">PIN</div>
+    </div>
+  `,
+  className: 'pickup-pin-marker',
+  iconSize: [36, 36],
+  iconAnchor: [18, 30],
+  popupAnchor: [0, -30],
+});
+
 const userLocationPin = new L.DivIcon({
   html: `
     <div style="position:relative;width:22px;height:22px;display:flex;align-items:center;justify-content:center;">
@@ -62,6 +78,8 @@ export function BinMap({
   height = 460,
   selectedBinId,
   onSelectBin,
+  pickupPin,
+  onPickupDrag,
 }: {
   bins: PublicBin[];
   editable?: boolean;
@@ -70,6 +88,8 @@ export function BinMap({
   height?: number | string;
   selectedBinId?: number | null;
   onSelectBin?: (bin: PublicBin) => void;
+  pickupPin?: [number, number] | null;
+  onPickupDrag?: (lat: number, lng: number) => void;
 }) {
   const [userLocation, setUserLocation] = useState<[number, number] | null>(null);
   const [locating, setLocating] = useState(false);
@@ -159,6 +179,32 @@ export function BinMap({
         />
 
         <ClickHandler onPick={onPick} />
+
+        {pickupPin && (
+          <Marker
+            position={pickupPin}
+            icon={pickupPinIcon}
+            draggable={!!onPickupDrag}
+            eventHandlers={{
+              dragend: (e) => {
+                const m = e.target as L.Marker;
+                const pos = m.getLatLng();
+                const lat = Number(pos.lat.toFixed(6));
+                const lng = Number(pos.lng.toFixed(6));
+                onPickupDrag?.(lat, lng);
+                onPick?.(lat, lng);
+              },
+            }}
+          >
+            <Popup>
+              <div className="p-1 text-[13px]">
+                <p className="font-bold text-foreground">Pickup location</p>
+                <p className="text-muted-foreground font-mono text-[11px]">{pickupPin[0].toFixed(6)}, {pickupPin[1].toFixed(6)}</p>
+                <p className="text-[11px] text-safety font-semibold">Drag pin to adjust</p>
+              </div>
+            </Popup>
+          </Marker>
+        )}
 
         {userLocation && (
           <>

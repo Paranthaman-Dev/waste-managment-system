@@ -526,7 +526,7 @@ export function ResidentDashboard() {
 
               {/* Right: map */}
               <div className="lg:sticky lg:top-6 space-y-2 min-w-0">
-                <Label>Pin on map</Label>
+                <Label>Pin on map — drag pinpoint to choose location</Label>
                 <div className="relative rounded-[12px] overflow-hidden border border-border shadow-soft">
                   <ErrorBoundary>
                     <Suspense fallback={<SkeletonMap height={420} />}>
@@ -538,16 +538,19 @@ export function ResidentDashboard() {
                           setPickupLng(lng);
                           setLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
                         }}
+                        pickupPin={pickupLat != null && pickupLng != null ? [pickupLat, pickupLng] : null}
+                        onPickupDrag={(lat, lng) => {
+                          setPickupLat(lat);
+                          setPickupLng(lng);
+                          setLocation(`${lat.toFixed(6)}, ${lng.toFixed(6)}`);
+                        }}
                         height={420}
                         selectedBinId={null}
                       />
                     </Suspense>
                   </ErrorBoundary>
-                  <div className="pointer-events-none absolute left-1/2 top-1/2 z-[401] -translate-x-1/2 -translate-y-1/2">
-                    <MapPinned className="h-8 w-8 text-safety fill-white drop-shadow-[0_2px_6px_rgba(0,0,0,0.3)]" />
-                  </div>
                 </div>
-                <p className="text-[11px] text-muted-foreground">Drag map • Tap to drop pin • Use Locate me for GPS</p>
+                <p className="text-[11px] text-muted-foreground">Tap map to place pin • Drag pinpoint to adjust • Use Locate me for GPS</p>
               </div>
             </div>
 

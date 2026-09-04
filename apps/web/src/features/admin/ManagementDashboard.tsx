@@ -660,6 +660,8 @@ export function ManagementDashboard() {
                   onPick={(lat, lng) => setBinForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
                   onDrag={dragBinToNewLocation}
                   onSelectBin={selectBinForEditing}
+                  pickupPin={!selectedBin ? [binForm.latitude, binForm.longitude] : null}
+                  onPickupDrag={(lat, lng) => setBinForm((prev) => ({ ...prev, latitude: lat, longitude: lng }))}
                 />
               </Suspense>
             </ErrorBoundary>
