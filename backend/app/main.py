@@ -13,6 +13,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 from fastapi.responses import JSONResponse as SlowJSONResponse
 
+import os
 from pathlib import Path
 
 from .db.session import engine
@@ -74,6 +75,15 @@ async def on_startup():
             await conn.execute(text("UPDATE recyclers SET accepted_waste_types='[]' WHERE accepted_waste_types IS NULL"))
         except Exception:
             pass
+    # Auto-seed demo data if DB is empty (ensures Mass Recycled KPI shows 25kg after sqlite wipe / Render redeploy)
+    # Set AUTO_SEED=0 to disable for production with real data
+    if os.getenv("AUTO_SEED", "1") != "0":
+        try:
+            from app.db.seed_demo import seed_all
+
+            await seed_all()
+        except Exception as e:
+            print(f"[startup] auto-seed skipped: {e}")
 
 @app.get("/health", response_class=JSONResponse)
 async def health_check():
